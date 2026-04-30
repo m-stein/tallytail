@@ -9,6 +9,7 @@ pub mod category;
 pub mod category_value;
 pub mod category_assignment;
 pub mod category_assignment_input;
+pub mod configure_categories_input;
 pub mod error;
 pub mod named_distribution;
 pub mod repository;

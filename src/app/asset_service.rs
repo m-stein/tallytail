@@ -6,6 +6,7 @@ use crate::app::allocation_record_input::{AllocationPositionInput, AllocationRec
 use crate::app::allocation_record::AllocationRecord;
 use crate::app::asset::Asset;
 use crate::app::asset_input::AssetInput;
+use crate::app::configure_categories_input::{AdaptCategoryInput, ConfigureCatgoriesInput, NewCategoryInput};
 use crate::app::error::AppError;
 use crate::app::repository::AssetRepository;
 use crate::app::asset_reference::AssetReference;
@@ -24,21 +25,85 @@ impl AssetService {
         Self { repository }
     }
 
-    pub fn add_categories(&mut self, names: Vec<String>) -> Result<(), (usize, AppError)> {
-        let mut added_cnt: usize = 0;
-        for name in names {
-            let name = name.trim();
-            if name.is_empty() {
-                return Err((added_cnt, AppError::Validation(
-                    "Category name must not be empty".into(),
-                )));
+    pub fn configure_categories(&mut self, input: ConfigureCatgoriesInput) -> (ConfigureCatgoriesInput, Option<AppError>) {
+        let mut remaining = ConfigureCatgoriesInput::default();
+        let mut first_error: Option<AppError> = None;
+
+        // Neue Kategorien + deren neue Values
+        for new_category in input.new_category_inputs {
+            let category_name = new_category.name.trim();
+
+            if category_name.is_empty() {
+                remaining.new_category_inputs.push(new_category);
+                continue;
             }
-            self.repository
-                .add_category(&Category { id: 0, name: name.to_string() })
-                .map_err(|err| (added_cnt, AppError::Storage(err.to_string())))?;
-            added_cnt += 1;
+
+            match self.repository.add_category(category_name) {
+                Ok(category_id) => {
+                    let mut remaining_values = Vec::new();
+
+                    for value_input in new_category.new_value_inputs {
+                        let value_name = value_input.name.trim();
+
+                        if value_name.is_empty() {
+                            remaining_values.push(value_input);
+                            continue;
+                        }
+
+                        if let Err(err) = self.repository.add_category_value(category_id, value_name) {
+                            if first_error.is_none() {
+                                first_error = Some(err);
+                            }
+                            remaining_values.push(value_input);
+                        }
+                    }
+
+                    if !remaining_values.is_empty() {
+                        remaining.new_category_inputs.push(NewCategoryInput {
+                            name: new_category.name,
+                            new_value_inputs: remaining_values,
+                        });
+                    }
+                }
+                Err(err) => {
+                    if first_error.is_none() {
+                        first_error = Some(err);
+                    }
+
+                    remaining.new_category_inputs.push(new_category);
+                }
+            }
         }
-        Ok(())
+
+        // Bestehende Kategorien erweitern
+        for (category_id, adapt_input) in input.category_id_to_adapt_input {
+            let mut remaining_values = Vec::new();
+
+            for value_input in adapt_input.new_value_inputs {
+                let value_name = value_input.name.trim();
+
+                if value_name.is_empty() {
+                    remaining_values.push(value_input);
+                    continue;
+                }
+
+                if let Err(err) = self.repository.add_category_value(category_id, value_name) {
+                    if first_error.is_none() {
+                        first_error = Some(err);
+                    }
+                    remaining_values.push(value_input);
+                }
+            }
+
+            if !remaining_values.is_empty() {
+                remaining.category_id_to_adapt_input.insert(
+                    category_id,
+                    AdaptCategoryInput { new_value_inputs: remaining_values },
+                );
+            }
+        }
+
+        (remaining, first_error)
     }
 
     pub fn calc_distribution_for_category(
@@ -161,16 +226,5 @@ impl AssetService {
     
     pub fn list_asset_category_values(&self, category_id: i64) -> Result<Vec<CategoryValue>, AppError> {
         self.repository.list_asset_category_values(category_id)
-    }
-
-    pub fn add_asset_category_value(
-        &mut self,
-        asset_category_id: i64,
-        name: String,
-    ) -> Result<(), AppError> {
-        let value = CategoryValue::new(asset_category_id, name)
-            .map_err(AppError::Validation)?;
-
-        self.repository.add_asset_category_value(&value)
     }
 }

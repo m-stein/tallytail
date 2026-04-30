@@ -10,6 +10,7 @@ use crate::app::allocation_record::AllocationRecord;
 use crate::app::asset_input::AssetInput;
 use crate::app::asset_service::AssetService;
 use crate::app::allocation_record_input::AllocationPositionInput;
+use crate::app::configure_categories_input::{AdaptCategoryInput, CategoryValueInput, ConfigureCatgoriesInput, NewCategoryInput};
 use crate::app::category_assignment_input::CategoryAssignmentInput;
 use crate::app::named_distribution::DatedDistribution;
 use crate::app::asset_reference_type::AssetReferenceType;
@@ -31,8 +32,7 @@ pub struct CategoryItem {
 enum Page {
     AllocationDiagram,
     AddAsset,
-    AddCategory,
-    AddCategoryValue,
+    ConfigureCategories,
     AddAllocationRecord,
 }
 
@@ -45,12 +45,8 @@ pub struct DesktopApp {
     latest_allocation_record: Option<AllocationRecord>,
     asset_name_by_id: HashMap<i64, String>,
 
-    cfg_catgies_name_input_cnt: usize,
-    cfg_catgies_name_inputs: Vec<String>,
-    cfg_catgies_id_to_value_input_cnt: HashMap<i64, usize>,
-    cfg_catgies_id_to_value_inputs: HashMap<i64, Vec<String>>,
+    cfg_catgs_input: ConfigureCatgoriesInput,
 
-    category_value_name_input: String,
     selected_category_id_for_value: Option<i64>,
     asset_categories: Vec<CategoryItem>,
 
@@ -85,12 +81,8 @@ impl DesktopApp {
             latest_allocation_record: None,
             asset_name_by_id: HashMap::new(),
 
-            cfg_catgies_name_input_cnt: 1,
-            cfg_catgies_name_inputs: Vec::new(),
-            cfg_catgies_id_to_value_input_cnt: HashMap::new(),
-            cfg_catgies_id_to_value_inputs: HashMap::new(),
+            cfg_catgs_input: ConfigureCatgoriesInput::default(),
 
-            category_value_name_input: String::new(),
             selected_category_id_for_value: None,
             asset_categories: Vec::new(),
 
@@ -146,17 +138,6 @@ impl DesktopApp {
         }
     }
 
-    fn selected_category_name_for_value(&self) -> &str {
-        match self.selected_category_id_for_value {
-            Some(selected_id) => self.asset_categories
-                .iter()
-                .find(|category| category.id == selected_id)
-                .map(|category| category.name.as_str())
-                .unwrap_or("Select..."),
-            None => "Select...",
-        }
-    }
-
     fn allocation_diagram_category_selected_text(&self) -> &str {
         match self.alloc_diagram_category_id {
             Some(category_id) => self.asset_categories
@@ -166,13 +147,6 @@ impl DesktopApp {
                 .unwrap_or("Position"),
             None => "Position",
         }
-    }
-
-    fn reset_add_category_value_page(&mut self) {
-        self.category_value_name_input.clear();
-        self.selected_category_id_for_value = self.asset_categories
-            .first()
-            .map(|category| category.id);
     }
 
     fn reset_add_asset_page(&mut self) {
@@ -411,59 +385,20 @@ impl DesktopApp {
         }
     }
 
-    fn init_add_category_page(&mut self) {
+    fn init_configure_categories_page(&mut self) {
         self.reload_asset_categories();
+        /* FIXME: category values should be reloaded here also (currently done in ui()) */
         self.message = None;
     }
 
-    fn init_add_category_value_page(&mut self) {
-        self.reload_asset_categories();
-        self.reset_add_category_value_page();
-        self.message = None;
-    }
-    
-    fn show_add_category_value_page(&mut self, ui: &mut egui::Ui) {
-
-        ui.label(egui::RichText::new("Add Category Value").heading().size(Self::H2_SIZE));
-        ui.add_space(Self::SPACE_2);
-
-        ui.label("Category:");
-        egui::ComboBox::from_id_salt("asset_category_value_category")
-            .selected_text(self.selected_category_name_for_value())
-            .show_ui(ui, |ui| {
-                for category in &self.asset_categories {
-                    ui.selectable_value(
-                        &mut self.selected_category_id_for_value,
-                        Some(category.id),
-                        &category.name,
-                    );
-                }
-            });
-        ui.add_space(8.0);
-        ui.label("Name:");
-        ui.text_edit_singleline(&mut self.category_value_name_input);
-        ui.add_space(Self::SPACE_2);
-        if ui.button("Save").clicked() {
-            let Some(category_id) = self.selected_category_id_for_value else {
-                self.message = Some("Please select a category.".into());
-                return;
-            };
-            match self.asset_service.add_asset_category_value(
-                category_id,
-                self.category_value_name_input.clone(),
-            ) {
-                Ok(()) => {
-                    self.message = Some(format!(
-                        "Category value '{}' was saved.",
-                        self.category_value_name_input.trim()
-                    ));
-                    self.reset_add_category_value_page();
-                }
-                Err(err) => {
-                    self.message = Some(err.to_string());
-                }
-            }
+    fn save_configured_categories(&mut self) {
+        let (new_cfg_catgs_input, err) = self.asset_service.configure_categories(self.cfg_catgs_input.clone());
+        if let Some(err) = err {
+            self.message = Some(format!("Partial save. First error: {}", err));
+        } else {
+            self.message = Some("All saved".into());
         }
+        self.cfg_catgs_input = new_cfg_catgs_input.clone();
     }
 
     fn show_configure_categories_page(&mut self, ui: &mut egui::Ui) {
@@ -471,83 +406,143 @@ impl DesktopApp {
         ui.label(egui::RichText::new("Configure Categories").heading().size(Self::H2_SIZE));
         ui.add_space(Self::SPACE_2);
         if ui.button("Save").clicked() {
-            match self.asset_service.add_categories(self.cfg_catgies_name_inputs.clone()) {
-                Ok(()) => {
-                    self.message = Some(format!(
-                        "Ok. Categories added: {}", self.cfg_catgies_name_inputs.join(", ")
-                    ));
-                    self.cfg_catgies_name_input_cnt = 0;
-                }
-                Err(err) => {
-                    let saved_names: Vec<String> = self.cfg_catgies_name_inputs
-                        .drain(0..err.0.min(self.cfg_catgies_name_inputs.len())).collect();
-                    self.cfg_catgies_name_input_cnt -= saved_names.len();
-                    self.message = Some(format!(
-                        "Error: {}. Categories added: {}",
-                        err.1.to_string(), saved_names.join(", ")
-                    ));
-                }
-            }
-            if self.cfg_catgies_name_input_cnt < 1 {
-                self.cfg_catgies_name_inputs.clear();
-                self.cfg_catgies_name_input_cnt = 1;
-            }
-            /* FIXME: save also new category values */
+            self.save_configured_categories();
             self.reload_asset_categories();
         }
         ui.add_space(Self::SPACE_2);
+        let mut focus_next_catg_input = false;
         ui.horizontal(|ui| {
             if ui
                 .add_sized([Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE], egui::Button::new("+"))
                 .clicked()
             {
-                self.cfg_catgies_name_input_cnt += 1;
+                self.cfg_catgs_input.new_category_inputs.push(NewCategoryInput::default());
+                focus_next_catg_input = true;
             }
             ui.label("Categories:");
         });
-        self.cfg_catgies_name_inputs.resize_with(self.cfg_catgies_name_input_cnt, || String::new());
-        for name_input_idx in (0..self.cfg_catgies_name_input_cnt).rev() {
-            ui.horizontal(|ui| {
-                ui.label("•");
-                ui.text_edit_singleline(&mut self.cfg_catgies_name_inputs[name_input_idx]);
+        
+        /* Show inputs for new categories */
+        let mut del_catg_idx: Option<usize> = None;
+        for (catg_idx, catg_input) in self.cfg_catgs_input.new_category_inputs.iter_mut().enumerate().rev() {
+            ui.add_space(Self::SPACE_2);
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label("•");
+                    let id = ui.make_persistent_id(("NewCatg", catg_idx));
+                    let response = ui.add(egui::TextEdit::singleline(&mut catg_input.name).id(id));
+                    if focus_next_catg_input {
+                        response.request_focus();
+                        focus_next_catg_input = false;
+                    }
+                    if ui
+                        .add_sized([Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE], egui::Button::new("-"))
+                        .clicked()
+                    {
+                        del_catg_idx = Some(catg_idx);
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.add_space(Self::SPACE_3);
+                    ui.vertical(|ui| {
+                        let mut focus_next_val_input = false;
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add_sized([Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE], egui::Button::new("+"))
+                                .clicked()
+                            {
+                                catg_input.new_value_inputs.push(CategoryValueInput::default());
+                                focus_next_val_input = true;
+                            }
+                            ui.label("Values:");
+                        });
 
-                /* FIXME: allow for adding category values also to new categories */
+                        /* Show inputs for new values */
+                        let mut del_val_idx: Option<usize> = None;
+                        for (val_idx, val_input) in catg_input.new_value_inputs.iter_mut().enumerate().rev() {
+                            ui.horizontal(|ui| {
+                                ui.label("•");
+                                let id = ui.make_persistent_id(("NewCatgVal", catg_idx, val_idx));
+                                let response = ui.add(egui::TextEdit::singleline(&mut val_input.name).id(id));
+                                if focus_next_val_input {
+                                    response.request_focus();
+                                    focus_next_val_input = false;
+                                }
+                                if ui
+                                    .add_sized([Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE], egui::Button::new("-"))
+                                    .clicked()
+                                {
+                                    del_val_idx = Some(val_idx);
+                                }
+                            });
+                        }
+                        if let Some(idx) = del_val_idx {
+                            catg_input.new_value_inputs.remove(idx);
+                        }
+                    });
+                });
             });
         }
-        for catgy in &self.asset_categories {
-            ui.label(format!("• {}", catgy.name));
+        if let Some(idx) = del_catg_idx {
+            self.cfg_catgs_input.new_category_inputs.remove(idx);
+        }
+        
+        /* Show existing categories */
+        for catg in &self.asset_categories {
+
+            let catg_input = &mut self.cfg_catgs_input.category_id_to_adapt_input
+                .entry(catg.id)
+                .or_insert(AdaptCategoryInput::default());
+
+            ui.add_space(Self::SPACE_2);
+            ui.label(format!("• {}", catg.name));
             ui.horizontal(|ui| {
                 ui.add_space(Self::SPACE_3);
                 ui.vertical(|ui| {
+
+
+                    /* FIXME: Value inputs for existing categories lack auto-focus on '+' and are still using the input_cnt approach.
+                     *        For a fix see the value inputs of new categories
+                     */
+
+                    let mut focus_next_val_input = false;
                     ui.horizontal(|ui| {
                         if ui
                             .add_sized([Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE], egui::Button::new("+"))
                             .clicked()
                         {
-                            self.cfg_catgies_id_to_value_input_cnt
-                                .entry(catgy.id)
-                                .and_modify(|cnt| *cnt += 1)
-                                .or_insert(2);
+                            catg_input.new_value_inputs.push(CategoryValueInput::default());
+                            focus_next_val_input = true;
                         }
                         ui.label("Values:");
                     });
-                    let val_input_cnt =
-                        *self.cfg_catgies_id_to_value_input_cnt
-                            .entry(catgy.id)
-                            .or_insert(1);
-                    let val_inputs =
-                        self.cfg_catgies_id_to_value_inputs
-                            .entry(catgy.id)
-                            .or_insert(Vec::new());
-                    val_inputs.resize_with(val_input_cnt, || String::new());
-                    for val_input in val_inputs {
+
+                    /* Show inputs for new values */
+                    let mut del_val_idx: Option<usize> = None;
+                    for (val_idx, val_input) in catg_input.new_value_inputs.iter_mut().enumerate().rev() {
                         ui.horizontal(|ui| {
                             ui.label("•");
-                            ui.text_edit_singleline(val_input);
+                            let id = ui.make_persistent_id(("AdaptCatgVal", catg.id, val_idx));
+                            let response = ui.add(egui::TextEdit::singleline(&mut val_input.name).id(id));
+                            if focus_next_val_input {
+                                response.request_focus();
+                                focus_next_val_input = false;
+                            }
+                            if ui
+                                .add_sized([Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE], egui::Button::new("-"))
+                                .clicked()
+                            {
+                                del_val_idx = Some(val_idx);
+                            }
                         });
                     }
+                    if let Some(idx) = del_val_idx {
+                        catg_input.new_value_inputs.remove(idx);
+                    }
+
+                    /* Show existing values */
                     let values = self.asset_service
-                        .list_asset_category_values(catgy.id)
+                        .list_asset_category_values(catg.id)
                         .unwrap_or_default();
                     for value in values {
                         ui.label(format!("• {}", value.name));
@@ -703,8 +698,7 @@ impl eframe::App for DesktopApp {
                 ui.vertical(|ui| {
                     self.show_page_button(ui, Page::AllocationDiagram, "Allocation Diagram", Self::init_alocation_diagram_page);
                     self.show_page_button(ui, Page::AddAsset, "Add Asset", Self::init_add_asset_page);
-                    self.show_page_button(ui, Page::AddCategory, "Add Category", Self::init_add_category_page);
-                    self.show_page_button(ui, Page::AddCategoryValue, "Add Category Value", Self::init_add_category_value_page);
+                    self.show_page_button(ui, Page::ConfigureCategories, "Configure Categories", Self::init_configure_categories_page);
                     self.show_page_button(ui, Page::AddAllocationRecord, "Add Allocation Record", Self::init_add_allocation_record_page);
                 });
                 ui.add_space(20.0);
@@ -712,8 +706,7 @@ impl eframe::App for DesktopApp {
                     match self.page {
                         Page::AddAsset => self.show_add_asset_page(ui),
                         Page::AllocationDiagram => self.show_allocation_diagram_page(ui),
-                        Page::AddCategory => self.show_configure_categories_page(ui),
-                        Page::AddCategoryValue => self.show_add_category_value_page(ui),
+                        Page::ConfigureCategories => self.show_configure_categories_page(ui),
                         Page::AddAllocationRecord => self.show_add_allocation_record_page(ui),
                     }
                     ui.add_space(20.0);

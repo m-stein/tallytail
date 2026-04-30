@@ -229,7 +229,6 @@ impl AssetRepository for SqliteAssetRepository {
             .query_map(params![category_id], |row| {
                 Ok(CategoryValue {
                     id: row.get(0)?,
-                    asset_category_id: row.get(1)?,
                     name: row.get(2)?,
                 })
             })
@@ -271,16 +270,12 @@ impl AssetRepository for SqliteAssetRepository {
         Ok(categories)
     }
 
-    fn add_asset_category_value(
-        &mut self,
-        value: &CategoryValue,
-    ) -> Result<(), AppError> {
+    fn add_category_value(&mut self, category_id: i64, value_name: &str) -> Result<(), AppError> {
         self.connection.execute(
             "INSERT INTO asset_category_values (asset_category_id, name)
             VALUES (?1, ?2)",
-            rusqlite::params![value.asset_category_id, value.name],
+            rusqlite::params![category_id, value_name],
         ).map_err(|e| AppError::Storage(e.to_string()))?;
-
         Ok(())
     }
 
@@ -315,15 +310,14 @@ impl AssetRepository for SqliteAssetRepository {
         Ok(())
     }
 
-    fn add_category(&mut self, category: &Category) -> Result<(), AppError> {
+    fn add_category(&mut self, name: &str) -> Result<i64, AppError> {
         self.connection
             .execute(
                 "INSERT INTO asset_categories (name) VALUES (?1)",
-                params![category.name],
+                params![name],
             )
             .map_err(|e| AppError::Storage(e.to_string()))?;
-
-        Ok(())
+        Ok(self.connection.last_insert_rowid())
     }
 
     fn list_assets(&self) -> Result<Vec<Asset>, AppError> {
