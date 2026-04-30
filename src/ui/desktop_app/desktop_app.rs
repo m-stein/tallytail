@@ -10,6 +10,7 @@ use crate::app::allocation_record::AllocationRecord;
 use crate::app::asset_input::AssetInput;
 use crate::app::asset_service::AssetService;
 use crate::app::allocation_record_input::AllocationPositionInput;
+use crate::app::category::Category;
 use crate::app::configure_categories_input::{AdaptCategoryInput, CategoryValueInput, ConfigureCatgoriesInput, NewCategoryInput};
 use crate::app::category_assignment_input::CategoryAssignmentInput;
 use crate::app::named_distribution::DatedDistribution;
@@ -20,12 +21,6 @@ pub struct PositionItem {
     pub id: i64,
     pub label: String,
     pub amount_input: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct CategoryItem {
-    pub id: i64,
-    pub name: String,
 }
 
 #[derive(PartialEq)]
@@ -47,8 +42,7 @@ pub struct DesktopApp {
 
     cfg_catgs_input: ConfigureCatgoriesInput,
 
-    selected_category_id_for_value: Option<i64>,
-    asset_categories: Vec<CategoryItem>,
+    existing_catgs: Vec<Category>,
 
     alloc_diagram_category_id: Option<i64>,
     alloc_diagram_data: Option<Vec<DatedDistribution>>,
@@ -83,8 +77,7 @@ impl DesktopApp {
 
             cfg_catgs_input: ConfigureCatgoriesInput::default(),
 
-            selected_category_id_for_value: None,
-            asset_categories: Vec::new(),
+            existing_catgs: Vec::new(),
 
             add_asset_asset_input: AssetInput::default(),
             add_asset_catgy_id_to_assignm_input_cnt: HashMap::new(),
@@ -117,30 +110,16 @@ impl DesktopApp {
         }
     }
 
-    fn reload_asset_categories(&mut self) {
-        match self.asset_service.list_asset_categories() {
-            Ok(categories) => {
-                self.asset_categories = categories
-                    .into_iter()
-                    .map(|category| CategoryItem {
-                        id: category.id,
-                        name: category.name,
-                    })
-                    .collect();
-
-                self.selected_category_id_for_value = self.asset_categories
-                    .first()
-                    .map(|category| category.id);
-            }
-            Err(err) => {
-                self.message = Some(err.to_string());
-            }
+    fn reload_existing_categories(&mut self) {
+        match self.asset_service.get_categories() {
+            Ok(categories) => { self.existing_catgs = categories; }
+            Err(err) => { self.message = Some(err.to_string()); }
         }
     }
 
     fn allocation_diagram_category_selected_text(&self) -> &str {
         match self.alloc_diagram_category_id {
-            Some(category_id) => self.asset_categories
+            Some(category_id) => self.existing_catgs
                 .iter()
                 .find(|category| category.id == category_id)
                 .map(|category| category.name.as_str())
@@ -296,7 +275,7 @@ impl DesktopApp {
     }
 
     fn init_alocation_diagram_page(&mut self) {
-        self.reload_asset_categories();
+        self.reload_existing_categories();
         self.reload_alloc_diagram_data();
         self.reload_latest_allocation_record();
     }
@@ -312,7 +291,7 @@ impl DesktopApp {
         egui::ComboBox::from_id_salt("allocation_diagram_category")
             .selected_text(self.allocation_diagram_category_selected_text())
             .show_ui(ui, |ui| {
-                for category in &self.asset_categories {
+                for category in &self.existing_catgs {
                     ui.selectable_value(
                         &mut self.alloc_diagram_category_id,
                         Some(category.id),
@@ -368,13 +347,7 @@ impl DesktopApp {
         }
     }
 
-    fn show_page_button(
-        &mut self,
-        ui: &mut egui::Ui,
-        page: Page,
-        label: &str,
-        init_page_fn: fn(&mut Self),
-    ) {
+    fn show_page_button(&mut self, ui: &mut egui::Ui, page: Page, label: &str, init_page_fn: fn(&mut Self)) {
         let response = ui.add_sized(
             [180.0, 20.0],
             egui::Button::selectable(self.page == page, label),
@@ -386,8 +359,7 @@ impl DesktopApp {
     }
 
     fn init_configure_categories_page(&mut self) {
-        self.reload_asset_categories();
-        /* FIXME: category values should be reloaded here also (currently done in ui()) */
+        self.reload_existing_categories();
         self.message = None;
     }
 
@@ -398,7 +370,7 @@ impl DesktopApp {
         } else {
             self.message = Some("All saved".into());
         }
-        self.cfg_catgs_input = new_cfg_catgs_input.clone();
+        self.cfg_catgs_input = new_cfg_catgs_input;
     }
 
     fn show_configure_categories_page(&mut self, ui: &mut egui::Ui) {
@@ -407,7 +379,7 @@ impl DesktopApp {
         ui.add_space(Self::SPACE_2);
         if ui.button("Save").clicked() {
             self.save_configured_categories();
-            self.reload_asset_categories();
+            self.reload_existing_categories();
         }
         ui.add_space(Self::SPACE_2);
         let mut focus_next_catg_input = false;
@@ -488,7 +460,7 @@ impl DesktopApp {
         }
         
         /* Show existing categories */
-        for catg in &self.asset_categories {
+        for catg in &self.existing_catgs {
 
             let catg_input = &mut self.cfg_catgs_input.category_id_to_adapt_input
                 .entry(catg.id)
@@ -499,12 +471,6 @@ impl DesktopApp {
             ui.horizontal(|ui| {
                 ui.add_space(Self::SPACE_3);
                 ui.vertical(|ui| {
-
-
-                    /* FIXME: Value inputs for existing categories lack auto-focus on '+' and are still using the input_cnt approach.
-                     *        For a fix see the value inputs of new categories
-                     */
-
                     let mut focus_next_val_input = false;
                     ui.horizontal(|ui| {
                         if ui
@@ -541,10 +507,7 @@ impl DesktopApp {
                     }
 
                     /* Show existing values */
-                    let values = self.asset_service
-                        .list_asset_category_values(catg.id)
-                        .unwrap_or_default();
-                    for value in values {
+                    for value in &catg.values {
                         ui.label(format!("• {}", value.name));
                     }
                 });
@@ -555,7 +518,7 @@ impl DesktopApp {
     fn init_add_asset_page(&mut self) {
 
         self.reset_add_asset_page();
-        self.reload_asset_categories();
+        self.reload_existing_categories();
         self.add_asset_catgy_id_to_assignm_inputs.clear();
         self.message = None;
     }
@@ -583,7 +546,7 @@ impl DesktopApp {
         ui.label("Reference value:");
         ui.text_edit_singleline(&mut self.add_asset_asset_input.reference_value);
         ui.vertical(|ui| {
-            for catgy in &mut self.asset_categories {
+            for catgy in &mut self.existing_catgs {
 
                 let selectable_vals =
                     self.asset_service
@@ -710,7 +673,6 @@ impl eframe::App for DesktopApp {
                         Page::AddAllocationRecord => self.show_add_allocation_record_page(ui),
                     }
                     ui.add_space(20.0);
-
                     ui.label(egui::RichText::new("Message").heading().size(Self::H2_SIZE));
                     ui.add_space(Self::SPACE_2);
                     if let Some(message) = &self.message {

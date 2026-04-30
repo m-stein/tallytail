@@ -10,13 +10,13 @@ use crate::app::category_assignment::CategoryAssignment;
 pub trait AssetRepository {
     fn add_asset(&mut self, asset: &Asset, catgy_assignms: &Vec<CategoryAssignment>) -> Result<(), AppError>;
     fn add_category(&mut self, name: &str) -> Result<i64, AppError>;
-    fn list_assets(&self) -> Result<Vec<Asset>, AppError>;
+    fn get_assets(&self) -> Result<Vec<Asset>, AppError>;
     fn add_allocation_record(
         &mut self,
         record: &AllocationRecordInput,
     ) -> Result<(), AppError>;
-    fn list_asset_categories(&self) -> Result<Vec<Category>, AppError>;
-    fn list_asset_category_values(&self, category_id: i64) -> Result<Vec<CategoryValue>, AppError>;
+    fn get_categories_without_values(&self) -> Result<Vec<Category>, AppError>;
+    fn get_category_values(&self, category_id: i64) -> Result<Vec<CategoryValue>, AppError>;
     fn add_category_value(&mut self, category_id: i64, value_name: &str) -> Result<(), AppError>;
     fn get_latest_allocation_records(
         &self,

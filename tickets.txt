@@ -1,4 +1,4 @@
-Last added: T16
+Last added: T20
 
 Open
 ####
@@ -20,9 +20,7 @@ T14: The entire app must be scrollable in case that the content exceeds the main
 
 T15: Get rid of AppError and use standard errors instead
 
-T17: Do not reload existing category values inside show_configure_categories_page.
-     They should be reloaded only when needed as side-effect of a user interaction.
-     Thereby merge existing categories and values into one hash map
+T20: list_asset_category_values should not be called from the ui update function
 
 T18: Simplify ConfigureCategoryInput by using one datastructure for both new and existing entities.
      The distinction could be made by adding an Option<i64> for the entity ID which is None for
@@ -50,3 +48,7 @@ T13: Allow float position amounts in records
 T2: When navigating to "Allocation Diagram" the diagram is not updated
 
 T10: All categories and values should be configurable in one page
+
+T17: Do not reload existing category values inside show_configure_categories_page.
+     They should be reloaded only when needed as side-effect of a user interaction.
+     Thereby merge existing categories and values into one datastructure.

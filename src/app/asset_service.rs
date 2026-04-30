@@ -200,7 +200,7 @@ impl AssetService {
     }
     
     pub fn list_assets(&self) -> Result<Vec<Asset>, AppError> {
-        self.repository.list_assets()
+        self.repository.get_assets()
     }
 
     pub fn add_allocation_record(
@@ -220,11 +220,15 @@ impl AssetService {
         Ok(self.repository.get_latest_allocation_records(1)?.pop())
     }
 
-    pub fn list_asset_categories(&self) -> Result<Vec<Category>, AppError> {
-        self.repository.list_asset_categories()
+    pub fn get_categories(&self) -> Result<Vec<Category>, AppError> {
+        let mut catgs = self.repository.get_categories_without_values()?;
+        for catg in catgs.iter_mut() {
+            catg.values = self.repository.get_category_values(catg.id)?;
+        }
+        Ok(catgs)
     }
     
     pub fn list_asset_category_values(&self, category_id: i64) -> Result<Vec<CategoryValue>, AppError> {
-        self.repository.list_asset_category_values(category_id)
+        self.repository.get_category_values(category_id)
     }
 }

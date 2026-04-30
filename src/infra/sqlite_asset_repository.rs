@@ -7,12 +7,12 @@ use rusqlite::{Connection, params};
 
 use crate::app::allocation_record::{AllocationPosition, AllocationRecord, AllocationAssetCategory, AllocationCategoryValue, AllocationAsset};
 use crate::app::asset_reference_type::AssetReferenceType;
+use crate::app::category::Category;
 use crate::app::error::AppError;
 use crate::app::repository::AssetRepository;
 use crate::app::allocation_record_input::AllocationRecordInput;
 use crate::app::asset::Asset;
 use crate::app::asset_reference::AssetReference;
-use crate::app::category::Category;
 use crate::app::category_value::CategoryValue;
 use crate::app::category_assignment::CategoryAssignment;
 
@@ -213,61 +213,31 @@ impl AssetRepository for SqliteAssetRepository {
             .collect()
     }
 
-    fn list_asset_category_values(&self, category_id: i64) -> Result<Vec<CategoryValue>, AppError> {
-        let mut stmt = self.connection
-            .prepare(
-                "
+    fn get_category_values(&self, category_id: i64) -> Result<Vec<CategoryValue>, AppError> {
+        self.connection
+            .prepare("
                 SELECT id, asset_category_id, name
                 FROM asset_category_values
                 WHERE asset_category_id = ?
-                ORDER BY name
-                ",
-            )
-            .map_err(|e| AppError::Storage(e.to_string()))?;
-
-        let values_iter = stmt
-            .query_map(params![category_id], |row| {
-                Ok(CategoryValue {
-                    id: row.get(0)?,
-                    name: row.get(2)?,
-                })
+                ORDER BY name")
+            .and_then(|mut stmt| {
+                stmt.query_map(params![category_id], |row| {Ok(CategoryValue { id: row.get(0)?, name: row.get(2)? })})?
+                    .collect()
             })
-            .map_err(|e| AppError::Storage(e.to_string()))?;
-
-        let mut values = Vec::new();
-        for value in values_iter {
-            values.push(
-                value.map_err(|e| AppError::Storage(e.to_string()))?
-            );
-        }
-
-        Ok(values)
+            .map_err(|e| AppError::Storage(e.to_string()))
     }
 
-    fn list_asset_categories(&self) -> Result<Vec<Category>, AppError> {
-        let mut stmt = self.connection
-            .prepare(
-                "SELECT id, name
+    fn get_categories_without_values(&self) -> Result<Vec<Category>, AppError> {
+        self.connection
+            .prepare("
+                SELECT id, name
                 FROM asset_categories
-                ORDER BY name ASC"
-            )
-            .map_err(|e| AppError::Storage(e.to_string()))?;
-
-        let rows = stmt
-            .query_map([], |row| {
-                Ok(Category {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                })
+                ORDER BY name ASC")
+            .and_then(|mut stmt| {
+                stmt.query_map([], |row| {Ok(Category { id: row.get(0)?, name: row.get(1)?, values: Vec::new() })})?
+                    .collect()
             })
-            .map_err(|e| AppError::Storage(e.to_string()))?;
-
-        let mut categories = Vec::new();
-        for row in rows {
-            categories.push(row.map_err(|e| AppError::Storage(e.to_string()))?);
-        }
-
-        Ok(categories)
+            .map_err(|e| AppError::Storage(e.to_string()))
     }
 
     fn add_category_value(&mut self, category_id: i64, value_name: &str) -> Result<(), AppError> {
@@ -320,7 +290,7 @@ impl AssetRepository for SqliteAssetRepository {
         Ok(self.connection.last_insert_rowid())
     }
 
-    fn list_assets(&self) -> Result<Vec<Asset>, AppError> {
+    fn get_assets(&self) -> Result<Vec<Asset>, AppError> {
         let mut stmt = self.connection
             .prepare(
                 "SELECT id, name, reference_type, reference_value
