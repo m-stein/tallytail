@@ -7,7 +7,7 @@ use crate::app::allocation_record::AllocationRecord;
 use crate::app::asset::Asset;
 use crate::app::asset_input::AssetInput;
 use crate::app::configure_categories_input::{AdaptCategoryInput, ConfigureCatgoriesInput, NewCategoryInput};
-use crate::app::error::AppError;
+use crate::app::error::Error;
 use crate::app::repository::AssetRepository;
 use crate::app::asset_reference::AssetReference;
 use crate::app::category::Category;
@@ -25,9 +25,9 @@ impl AssetService {
         Self { repository }
     }
 
-    pub fn configure_categories(&mut self, input: ConfigureCatgoriesInput) -> (ConfigureCatgoriesInput, Option<AppError>) {
+    pub fn configure_categories(&mut self, input: ConfigureCatgoriesInput) -> (ConfigureCatgoriesInput, Option<Error>) {
         let mut remaining = ConfigureCatgoriesInput::default();
-        let mut first_error: Option<AppError> = None;
+        let mut first_error: Option<Error> = None;
 
         // Neue Kategorien + deren neue Values
         for new_category in input.new_category_inputs {
@@ -159,7 +159,7 @@ impl AssetService {
         &self,
         category_id: i64,
         days: i64,
-    ) -> Result<Vec<DatedDistribution>, AppError> {
+    ) -> Result<Vec<DatedDistribution>, Error> {
 
         let records = self.repository.get_latest_allocation_records(days as usize)?;
         let category_name = self.repository.get_category_name_by_id(category_id)?;
@@ -170,17 +170,16 @@ impl AssetService {
         &mut self,
         asset_input: &AssetInput,
         catgy_id_to_assignm_inputs: &HashMap<i64, Vec<CategoryAssignmentInput>>,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), Error> {
         let name = asset_input.name.trim();
         if name.is_empty() {
-            return Err(AppError::Validation(
+            return Err(Error::App(
                 "Asset name must not be empty".into(),
             ));
         }
         let reference = AssetReference::new(
             asset_input.reference_type, asset_input.reference_value.clone()
-        ).map_err(AppError::Validation)?;
-
+        )?;
         let asset = Asset {
             id: 0,
             name: name.to_string(),
@@ -192,14 +191,14 @@ impl AssetService {
                 if let Some(id) = assignm_input.value_id {
                     catgy_assignms.push(CategoryAssignment { value_id: id, ratio: assignm_input.percentage / 100. })
                 } else {
-                    return Err(AppError::Validation("Unset catgory value".into()));
+                    return Err(Error::App("Unset catgory value".into()));
                 };
             }
         }
         self.repository.add_asset(&asset, &catgy_assignms)
     }
     
-    pub fn list_assets(&self) -> Result<Vec<Asset>, AppError> {
+    pub fn list_assets(&self) -> Result<Vec<Asset>, Error> {
         self.repository.get_assets()
     }
 
@@ -207,20 +206,18 @@ impl AssetService {
         &mut self,
         date: Date,
         positions: Vec<AllocationPositionInput>,
-    ) -> Result<(), AppError> {
-        let record = AllocationRecordInput::new(date, positions)
-            .map_err(AppError::Validation)?;
-
+    ) -> Result<(), Error> {
+        let record = AllocationRecordInput::new(date, positions)?;
         self.repository.add_allocation_record(&record)
     }
 
     pub fn get_latest_allocation_record(
         &self,
-    ) -> Result<Option<AllocationRecord>, AppError> {
+    ) -> Result<Option<AllocationRecord>, Error> {
         Ok(self.repository.get_latest_allocation_records(1)?.pop())
     }
 
-    pub fn get_categories(&self) -> Result<Vec<Category>, AppError> {
+    pub fn get_categories(&self) -> Result<Vec<Category>, Error> {
         let mut catgs = self.repository.get_categories_without_values()?;
         for catg in catgs.iter_mut() {
             catg.values = self.repository.get_category_values(catg.id)?;
@@ -228,7 +225,7 @@ impl AssetService {
         Ok(catgs)
     }
     
-    pub fn list_asset_category_values(&self, category_id: i64) -> Result<Vec<CategoryValue>, AppError> {
+    pub fn list_asset_category_values(&self, category_id: i64) -> Result<Vec<CategoryValue>, Error> {
         self.repository.get_category_values(category_id)
     }
 }

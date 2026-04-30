@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::app::asset_reference_type::AssetReferenceType;
+use crate::app::{asset_reference_type::AssetReferenceType, error::Error};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -10,13 +10,11 @@ pub struct AssetReference {
 }
 
 impl AssetReference {
-    pub fn new(reference_type: AssetReferenceType, value: String) -> Result<Self, String> {
+    pub fn new(reference_type: AssetReferenceType, value: String) -> Result<Self, Error> {
         let trimmed = value.trim();
-
         if trimmed.is_empty() {
-            return Err("Reference value must not be empty".into());
+            Err("Reference value must not be empty".to_string())?
         }
-
         Ok(Self {
             r#type: reference_type,
             value: trimmed.to_string(),

@@ -8,7 +8,7 @@ use rusqlite::{Connection, params};
 use crate::app::allocation_record::{AllocationPosition, AllocationRecord, AllocationAssetCategory, AllocationCategoryValue, AllocationAsset};
 use crate::app::asset_reference_type::AssetReferenceType;
 use crate::app::category::Category;
-use crate::app::error::AppError;
+use crate::app::error::Error;
 use crate::app::repository::AssetRepository;
 use crate::app::allocation_record_input::AllocationRecordInput;
 use crate::app::asset::Asset;
@@ -23,24 +23,19 @@ pub struct SqliteAssetRepository {
 
 
 impl SqliteAssetRepository {
-    pub fn new(db_path: &str) -> Result<Self, AppError> {
+    pub fn new(db_path: &str) -> Result<Self, Error> {
         if let Some(parent) = Path::new(db_path).parent() {
             if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent).map_err(|err| {
-                    AppError::Storage(format!("Failed to create database directory: {err}"))
-                })?;
+                fs::create_dir_all(parent)?;
             }
         }
-
-        let connection = Connection::open(db_path)
-            .map_err(|err| AppError::Storage(format!("Failed to open database: {err}")))?;
-
+        let connection = Connection::open(db_path)?;
         let repository = Self { connection, allocation_records_path: "data/allocation_records".into() };
         repository.init_schema()?;
         Ok(repository)
     }
 
-    fn load_asset_ron(&self, asset_id: i64) -> Result<AllocationAsset, AppError> {
+    fn load_asset_ron(&self, asset_id: i64) -> Result<AllocationAsset, Error> {
         let (name, reference_type_str, reference_value): (String, String, String) = self.connection
             .query_row(
                 "SELECT name, reference_type, reference_value
@@ -48,8 +43,7 @@ impl SqliteAssetRepository {
                 WHERE id = ?1",
                 rusqlite::params![asset_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
-            .map_err(|e| AppError::Storage(e.to_string()))?;
+            )?;
 
         let reference_type: AssetReferenceType = reference_type_str.parse().unwrap();
         let mut stmt = self.connection
@@ -62,8 +56,7 @@ impl SqliteAssetRepository {
                     ON ac.id = acv.asset_category_id
                 WHERE acva.asset_id = ?1
                 ORDER BY ac.name, acv.name",
-            )
-            .map_err(|e| AppError::Storage(e.to_string()))?;
+            )?;
 
         let rows = stmt
             .query_map(rusqlite::params![asset_id], |row| {
@@ -72,14 +65,11 @@ impl SqliteAssetRepository {
                     row.get::<_, String>(1)?, // value
                     row.get::<_, f64>(2)?,    // ratio
                 ))
-            })
-            .map_err(|e| AppError::Storage(e.to_string()))?;
+            })?;
 
         let mut map: BTreeMap<String, Vec<AllocationCategoryValue>> = BTreeMap::new();
         for row in rows {
-            let (category, value, ratio) =
-                row.map_err(|e| AppError::Storage(e.to_string()))?;
-
+            let (category, value, ratio) = row?;
             map.entry(category)
                 .or_default()
                 .push(AllocationCategoryValue {
@@ -103,7 +93,7 @@ impl SqliteAssetRepository {
         })
     }
 
-    fn init_schema(&self) -> Result<(), AppError> {
+    fn init_schema(&self) -> Result<(), Error> {
         self.connection
             .execute(
                 r#"
@@ -115,8 +105,7 @@ impl SqliteAssetRepository {
                 );
                 "#,
                 [],
-            )
-            .map_err(|err| AppError::Storage(format!("Failed to initialize schema: {err}")))?;
+            )?;
 
         self.connection
             .execute(
@@ -127,8 +116,7 @@ impl SqliteAssetRepository {
                 );
                 "#,
                 [],
-            )
-            .map_err(|err| AppError::Storage(format!("Failed to initialize schema: {err}")))?;
+            )?;
 
         self.connection.execute(
             r#"
@@ -140,7 +128,7 @@ impl SqliteAssetRepository {
             )
             "#,
             [],
-        ).map_err(|e| AppError::Storage(e.to_string()))?;
+        )?;
 
         self.connection.execute(
             r#"
@@ -154,7 +142,7 @@ impl SqliteAssetRepository {
                 )
                 "#,
             [],
-        ).map_err(|err| AppError::Storage(format!("Failed to initialize schema: {err}")))?;
+        )?;
 
         Ok(())
     }
@@ -163,13 +151,12 @@ impl SqliteAssetRepository {
 fn get_latest_allocation_record_paths(
     dir: &Path,
     limit: usize,
-) -> Result<Vec<PathBuf>, AppError> {
+) -> Result<Vec<PathBuf>, Error> {
     if !dir.exists() {
         return Ok(Vec::new());
     }
 
-    let mut paths: Vec<PathBuf> = fs::read_dir(dir)
-        .map_err(|e| AppError::Storage(e.to_string()))?
+    let mut paths: Vec<PathBuf> = fs::read_dir(dir)?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
         .filter(|path| {
@@ -194,27 +181,23 @@ fn get_latest_allocation_record_paths(
     Ok(paths)
 }
 
-fn load_allocation_record_ron(path: &Path) -> Result<AllocationRecord, AppError> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| AppError::Storage(e.to_string()))?;
-
-    ron::from_str(&content)
-        .map_err(|e| AppError::Storage(e.to_string()))
+fn get_allocation_record(path: &Path) -> Result<AllocationRecord, Error> {
+    Ok(ron::from_str(&fs::read_to_string(path)?)?)
 }
 
 impl AssetRepository for SqliteAssetRepository {
     fn get_latest_allocation_records(
         &self,
         limit: usize,
-    ) -> Result<Vec<AllocationRecord>, AppError> {
+    ) -> Result<Vec<AllocationRecord>, Error> {
         get_latest_allocation_record_paths(Path::new(self.allocation_records_path.as_str()), limit)?
             .into_iter()
-            .map(|path| load_allocation_record_ron(&path))
+            .map(|path| get_allocation_record(&path))
             .collect()
     }
 
-    fn get_category_values(&self, category_id: i64) -> Result<Vec<CategoryValue>, AppError> {
-        self.connection
+    fn get_category_values(&self, category_id: i64) -> Result<Vec<CategoryValue>, Error> {
+        Ok(self.connection
             .prepare("
                 SELECT id, asset_category_id, name
                 FROM asset_category_values
@@ -223,12 +206,11 @@ impl AssetRepository for SqliteAssetRepository {
             .and_then(|mut stmt| {
                 stmt.query_map(params![category_id], |row| {Ok(CategoryValue { id: row.get(0)?, name: row.get(2)? })})?
                     .collect()
-            })
-            .map_err(|e| AppError::Storage(e.to_string()))
+            })?)
     }
 
-    fn get_categories_without_values(&self) -> Result<Vec<Category>, AppError> {
-        self.connection
+    fn get_categories_without_values(&self) -> Result<Vec<Category>, Error> {
+        Ok(self.connection
             .prepare("
                 SELECT id, name
                 FROM asset_categories
@@ -236,24 +218,20 @@ impl AssetRepository for SqliteAssetRepository {
             .and_then(|mut stmt| {
                 stmt.query_map([], |row| {Ok(Category { id: row.get(0)?, name: row.get(1)?, values: Vec::new() })})?
                     .collect()
-            })
-            .map_err(|e| AppError::Storage(e.to_string()))
+            })?)
     }
 
-    fn add_category_value(&mut self, category_id: i64, value_name: &str) -> Result<(), AppError> {
+    fn add_category_value(&mut self, category_id: i64, value_name: &str) -> Result<(), Error> {
         self.connection.execute(
             "INSERT INTO asset_category_values (asset_category_id, name)
             VALUES (?1, ?2)",
             rusqlite::params![category_id, value_name],
-        ).map_err(|e| AppError::Storage(e.to_string()))?;
+        )?;
         Ok(())
     }
 
-    fn add_asset(&mut self, asset: &Asset, catgy_assignms: &Vec<CategoryAssignment>) -> Result<(), AppError> {
-        let tx = self.connection
-            .transaction()
-            .map_err(|e| AppError::Storage(e.to_string()))?;
-
+    fn add_asset(&mut self, asset: &Asset, catgy_assignms: &Vec<CategoryAssignment>) -> Result<(), Error> {
+        let tx = self.connection.transaction()?;
         tx.execute(
             "INSERT INTO assets (name, reference_type, reference_value) VALUES (?1, ?2, ?3)",
             params![
@@ -261,43 +239,36 @@ impl AssetRepository for SqliteAssetRepository {
                 asset.reference.r#type.to_string(),
                 asset.reference.value
             ],
-        )
-        .map_err(|e| AppError::Storage(e.to_string()))?;
-
+        )?;
         let asset_id = tx.last_insert_rowid();
         for assignm in catgy_assignms.iter() {
-            tx.execute(
-                "
+            tx.execute("
                 INSERT INTO asset_category_value_assignments
                 (asset_id, asset_category_value_id, ratio)
-                VALUES (?1, ?2, ?3)
-                ",
+                VALUES (?1, ?2, ?3)",
                 params![asset_id, assignm.value_id, assignm.ratio],
-            )
-            .map_err(|e| AppError::Storage(e.to_string()))?;
+            )?;
         }
-        tx.commit().map_err(|e| AppError::Storage(e.to_string()))?;
+        tx.commit()?;
         Ok(())
     }
 
-    fn add_category(&mut self, name: &str) -> Result<i64, AppError> {
+    fn add_category(&mut self, name: &str) -> Result<i64, Error> {
         self.connection
             .execute(
                 "INSERT INTO asset_categories (name) VALUES (?1)",
                 params![name],
-            )
-            .map_err(|e| AppError::Storage(e.to_string()))?;
+            )?;
         Ok(self.connection.last_insert_rowid())
     }
 
-    fn get_assets(&self) -> Result<Vec<Asset>, AppError> {
+    fn get_assets(&self) -> Result<Vec<Asset>, Error> {
         let mut stmt = self.connection
             .prepare(
                 "SELECT id, name, reference_type, reference_value
                  FROM assets
                  ORDER BY name ASC"
-            )
-            .map_err(|e| AppError::Storage(e.to_string()))?;
+            )?;
 
         let rows = stmt
             .query_map([], |row| {
@@ -311,59 +282,44 @@ impl AssetRepository for SqliteAssetRepository {
                         value: row.get(3)?,
                     },
                 })
-            })
-            .map_err(|e| AppError::Storage(e.to_string()))?;
+            })?;
 
         let mut assets = Vec::new();
         for row in rows {
-            assets.push(row.map_err(|e| AppError::Storage(e.to_string()))?);
+            assets.push(row?);
         }
-
         Ok(assets)
     }
 
-    fn add_allocation_record(&mut self, record: &AllocationRecordInput) -> Result<(), AppError> {
+    fn add_allocation_record(&mut self, record: &AllocationRecordInput) -> Result<(), Error>
+    {
         let mut positions = Vec::new();
-
         for position in &record.positions {
             let asset = self.load_asset_ron(position.asset_id)?;
-
             positions.push(AllocationPosition {
                 asset,
                 amount: position.amount,
             });
         }
-
         let ron_record = AllocationRecord {
             date: record.date.to_string(),
             positions,
         };
-
-        fs::create_dir_all(self.allocation_records_path.as_str())
-            .map_err(|e| AppError::Storage(e.to_string()))?;
-
+        fs::create_dir_all(self.allocation_records_path.as_str())?;
         let path = Path::new(self.allocation_records_path.as_str())
             .join(format!("{}.ron", ron_record.date));
 
         let pretty = PrettyConfig::default();
-
-        let ron = ron::ser::to_string_pretty(&ron_record, pretty)
-            .map_err(|e| AppError::Storage(e.to_string()))?;
-
-        // überschreibt existierende Datei
-        fs::write(path, ron)
-            .map_err(|e| AppError::Storage(e.to_string()))?;
-
+        let ron = ron::ser::to_string_pretty(&ron_record, pretty)?;
+        fs::write(path, ron)?;
         Ok(())
     }
 
-    fn get_category_name_by_id(&self, category_id: i64) -> Result<String, AppError> {
-        self.connection
-            .query_row(
-                "SELECT name FROM asset_categories WHERE id = ?1",
-                rusqlite::params![category_id],
-                |row| row.get(0),
-            )
-            .map_err(|e| AppError::Storage(e.to_string()))
+    fn get_category_name_by_id(&self, category_id: i64) -> Result<String, Error> {
+        Ok(self.connection.query_row(
+            "SELECT name FROM asset_categories WHERE id = ?1",
+            rusqlite::params![category_id],
+            |row| row.get(0),
+        )?)
     }
 }
