@@ -225,7 +225,7 @@ impl AssetService {
         Ok(catgs)
     }
     
-    pub fn list_asset_category_values(&self, category_id: i64) -> Result<Vec<CategoryValue>, Error> {
+    pub fn get_category_values(&self, category_id: i64) -> Result<Vec<CategoryValue>, Error> {
         self.repository.get_category_values(category_id)
     }
 }
