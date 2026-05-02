@@ -535,12 +535,26 @@ impl DesktopApp {
     }
 
     fn init_add_asset_page(&mut self) -> Result<(), Error> {
-
         self.reset_add_asset_page();
         self.reload_existing_catgs_and_catg_values()?;
         self.add_asset_catgy_id_to_assignm_inputs.clear();
         self.message = None;
         Ok(())
+    }
+
+    fn save_new_asset(&mut self) {
+        match self.asset_service.add_asset(
+            &self.add_asset_asset_input,
+            &self.add_asset_catgy_id_to_assignm_inputs
+        ) {
+            Ok(()) => {
+                self.message = Some(format!("Asset '{}' was saved", self.add_asset_asset_input.name.trim()));
+                self.reset_add_asset_page();
+            }
+            Err(err) => {
+                self.message = Some(err.to_string());
+            }
+        }
     }
 
     fn show_add_asset_page(&mut self, ui: &mut egui::Ui) {
@@ -655,18 +669,7 @@ impl DesktopApp {
         });
         ui.add_space(Self::SPACE_2);
         if ui.button("Save").clicked() {
-            match self.asset_service.add_asset(
-                &self.add_asset_asset_input,
-                &self.add_asset_catgy_id_to_assignm_inputs
-            ) {
-                Ok(()) => {
-                    self.message = Some(format!("Asset '{}' was saved", self.add_asset_asset_input.name.trim()));
-                    self.reset_add_asset_page();
-                }
-                Err(err) => {
-                    self.message = Some(err.to_string());
-                }
-            }
+            self.save_new_asset()
         }
     }
 }

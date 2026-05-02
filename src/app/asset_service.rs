@@ -190,9 +190,7 @@ impl AssetService {
             for assignm_input in assignm_inputs {
                 if let Some(id) = assignm_input.value_id {
                     catgy_assignms.push(CategoryAssignment { value_id: id, ratio: assignm_input.percentage / 100. })
-                } else {
-                    return Err(Error::App("Unset catgory value".into()));
-                };
+                }
             }
         }
         self.repository.add_asset(&asset, &catgy_assignms)
