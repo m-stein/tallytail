@@ -7,13 +7,12 @@ use jiff::Zoned;
 use strum::IntoEnumIterator;
 
 use crate::app::allocation_record::AllocationRecord;
-use crate::app::asset_input::AssetInput;
+use crate::app::add_asset_input::{AddAssetInput, CategoryAssignmentInput};
 use crate::app::asset_service::AssetService;
 use crate::app::allocation_record_input::AllocationPositionInput;
 use crate::app::category::Category;
 use crate::app::category_value::CategoryValue;
 use crate::app::configure_categories_input::{CategoryValueInput, ConfigureCatgoriesInput, NewCategoryInput};
-use crate::app::category_assignment_input::CategoryAssignmentInput;
 use crate::app::error::Error;
 use crate::app::named_distribution::DatedDistribution;
 use crate::app::asset_reference_type::AssetReferenceType;
@@ -50,9 +49,7 @@ pub struct DesktopApp {
     alloc_diagram_category_id: Option<i64>,
     alloc_diagram_data: Option<Vec<DatedDistribution>>,
 
-    add_asset_asset_input: AssetInput,
-    add_asset_catgy_id_to_assignm_input_cnt: HashMap<i64, i64>,
-    add_asset_catgy_id_to_assignm_inputs: HashMap<i64, Vec<CategoryAssignmentInput>>,
+    add_asset_input: AddAssetInput,
 
     message: Option<String>,
 
@@ -83,13 +80,10 @@ impl DesktopApp {
             existing_catgs: Vec::new(),
             existing_catg_values: HashMap::new(),
 
-            add_asset_asset_input: AssetInput::default(),
-            add_asset_catgy_id_to_assignm_input_cnt: HashMap::new(),
+            add_asset_input: AddAssetInput::default(),
 
             alloc_diagram_category_id: None,
             alloc_diagram_data: None,
-
-            add_asset_catgy_id_to_assignm_inputs: HashMap::new(),
 
             message: None,
 
@@ -138,8 +132,7 @@ impl DesktopApp {
     }
 
     fn reset_add_asset_page(&mut self) {
-        self.add_asset_asset_input = AssetInput::default();
-        self.add_asset_catgy_id_to_assignm_input_cnt.clear();
+        self.add_asset_input = AddAssetInput::default();
     }
 
     fn reload_asset_list_for_allocation_record(&mut self) {
@@ -537,18 +530,14 @@ impl DesktopApp {
     fn init_add_asset_page(&mut self) -> Result<(), Error> {
         self.reset_add_asset_page();
         self.reload_existing_catgs_and_catg_values()?;
-        self.add_asset_catgy_id_to_assignm_inputs.clear();
         self.message = None;
         Ok(())
     }
 
     fn save_new_asset(&mut self) {
-        match self.asset_service.add_asset(
-            &self.add_asset_asset_input,
-            &self.add_asset_catgy_id_to_assignm_inputs
-        ) {
+        match self.asset_service.add_asset(&self.add_asset_input) {
             Ok(()) => {
-                self.message = Some(format!("Asset '{}' was saved", self.add_asset_asset_input.name.trim()));
+                self.message = Some(format!("Asset '{}' was saved", self.add_asset_input.name.trim()));
                 self.reset_add_asset_page();
             }
             Err(err) => {
@@ -563,22 +552,22 @@ impl DesktopApp {
         ui.add_space(Self::SPACE_2);
 
         ui.label("Name:");
-        ui.text_edit_singleline(&mut self.add_asset_asset_input.name);
+        ui.text_edit_singleline(&mut self.add_asset_input.name);
         ui.add_space(Self::SPACE_2);
 
         ui.label("Reference type:");
         egui::ComboBox::from_id_salt("reference_type")
-            .selected_text(Self::reference_type_label(self.add_asset_asset_input.reference_type))
+            .selected_text(Self::reference_type_label(self.add_asset_input.reference.r#type))
             .show_ui(ui, |ui| {
                 for t in AssetReferenceType::iter() {
                     ui.selectable_value(
-                        &mut self.add_asset_asset_input.reference_type, t, Self::reference_type_label(t));
+                        &mut self.add_asset_input.reference.r#type, t, Self::reference_type_label(t));
                 }
             });
         ui.add_space(Self::SPACE_2);
 
         ui.label("Reference value:");
-        ui.text_edit_singleline(&mut self.add_asset_asset_input.reference_value);
+        ui.text_edit_singleline(&mut self.add_asset_input.reference.value);
         ui.vertical(|ui| {
             for catgy in &mut self.existing_catgs {
 
@@ -587,43 +576,31 @@ impl DesktopApp {
                     .or_default();
 
                 let assignm_inputs =
-                    self.add_asset_catgy_id_to_assignm_inputs
+                    self.add_asset_input.catgy_id_to_assignm_inputs
                         .entry(catgy.id)
                         .or_default();
 
-                let assignm_input_cnt =
-                    *self.add_asset_catgy_id_to_assignm_input_cnt
-                        .entry(catgy.id)
-                        .or_insert(1) as usize;
-
                 ui.add_space(Self::SPACE_2);
                 ui.horizontal(|ui| {
-                    if assignm_input_cnt < selectable_vals.len() {
+                    if assignm_inputs.len() < selectable_vals.len() {
                         if ui
                             .add_sized([Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE], egui::Button::new("+"))
                             .clicked()
                         {
-                            self.add_asset_catgy_id_to_assignm_input_cnt
-                                .entry(catgy.id)
-                                .and_modify(|cnt| *cnt = assignm_input_cnt as i64 + 1)
-                                .or_insert(2);
+                            assignm_inputs.push(CategoryAssignmentInput {
+                                percentage:
+                                    if assignm_inputs.len() == 0 { 100. }
+                                    else { 0. },
+                                value_id: None,
+                            });
                         }
                     }
                     ui.label(format!(" {}:", &catgy.name));
                 });
                 ui.add_space(Self::SPACE_1);
 
-
-                assignm_inputs.resize_with(
-                    assignm_input_cnt, || {
-                        CategoryAssignmentInput {
-                            value_id: None,
-                            percentage:
-                                if assignm_input_cnt == 1 { 100. }
-                                else { 0. } }
-                    });
-
-                for input_idx in (0..assignm_input_cnt).rev() {
+                let mut del_input_idx: Option<usize> = None;
+                for input_idx in (0..assignm_inputs.len()).rev() {
                     
                     let assignm_input = &mut assignm_inputs[input_idx];
                     let selected_text = assignm_input.value_id
@@ -651,19 +628,16 @@ impl DesktopApp {
                                     );
                                 }
                             });
-                        if input_idx == assignm_input_cnt - 1 {
-                            if assignm_input_cnt > 1 {
-                                if ui
-                                    .add_sized([Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE], egui::Button::new("-"))
-                                    .clicked()
-                                {
-                                    self.add_asset_catgy_id_to_assignm_input_cnt
-                                        .entry(catgy.id)
-                                        .and_modify(|cnt| *cnt = assignm_input_cnt as i64 - 1);
-                                }
-                            }
+                        if ui
+                            .add_sized([Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE], egui::Button::new("-"))
+                            .clicked()
+                        {
+                            del_input_idx = Some(input_idx);
                         }
                     });
+                }
+                if let Some(idx) = del_input_idx {
+                    assignm_inputs.remove(idx);
                 }
             }
         });

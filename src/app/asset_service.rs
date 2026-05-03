@@ -5,15 +5,13 @@ use jiff::civil::Date;
 use crate::app::allocation_record_input::{AllocationPositionInput, AllocationRecordInput};
 use crate::app::allocation_record::AllocationRecord;
 use crate::app::asset::Asset;
-use crate::app::asset_input::AssetInput;
+use crate::app::add_asset_input::AddAssetInput;
 use crate::app::configure_categories_input::{AdaptCategoryInput, ConfigureCatgoriesInput, NewCategoryInput};
 use crate::app::error::Error;
 use crate::app::repository::AssetRepository;
-use crate::app::asset_reference::AssetReference;
 use crate::app::category::Category;
 use crate::app::category_value::CategoryValue;
 use crate::app::category_assignment::CategoryAssignment;
-use crate::app::category_assignment_input::CategoryAssignmentInput;
 use crate::app::named_distribution::{DatedDistribution, NamedDistribution};
 
 pub struct AssetService {
@@ -166,27 +164,21 @@ impl AssetService {
         Ok(self.calc_distribution_for_category(records, &category_name))
     }
 
-    pub fn add_asset(
-        &mut self,
-        asset_input: &AssetInput,
-        catgy_id_to_assignm_inputs: &HashMap<i64, Vec<CategoryAssignmentInput>>,
-    ) -> Result<(), Error> {
-        let name = asset_input.name.trim();
+    pub fn add_asset(&mut self, input: &AddAssetInput) -> Result<(), Error> {
+        let name = input.name.trim();
         if name.is_empty() {
-            return Err(Error::App(
-                "Asset name must not be empty".into(),
-            ));
+            return Err(Error::App("Asset name must not be empty".into()));
         }
-        let reference = AssetReference::new(
-            asset_input.reference_type, asset_input.reference_value.clone()
-        )?;
+        if input.reference.value.is_empty() {
+            return Err(Error::App("Reference value must not be empty".into()));
+        }
         let asset = Asset {
             id: 0,
             name: name.to_string(),
-            reference,
+            reference: input.reference.clone(),
         };
         let mut catgy_assignms: Vec<CategoryAssignment> = Vec::new();
-        for (_, assignm_inputs) in catgy_id_to_assignm_inputs.iter() {
+        for (_, assignm_inputs) in input.catgy_id_to_assignm_inputs.iter() {
             for assignm_input in assignm_inputs {
                 if let Some(id) = assignm_input.value_id {
                     catgy_assignms.push(CategoryAssignment { value_id: id, ratio: assignm_input.percentage / 100. })
