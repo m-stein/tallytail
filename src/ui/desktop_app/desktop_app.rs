@@ -615,31 +615,31 @@ impl DesktopApp {
 
 
                 assignm_inputs.resize_with(
-                    assignm_input_cnt, || CategoryAssignmentInput { value_id: None, percentage: 0. });
+                    assignm_input_cnt, || {
+                        CategoryAssignmentInput {
+                            value_id: None,
+                            percentage:
+                                if assignm_input_cnt == 1 { 100. }
+                                else { 0. } }
+                    });
 
                 for input_idx in (0..assignm_input_cnt).rev() {
                     
                     let assignm_input = &mut assignm_inputs[input_idx];
-                    if assignm_input_cnt == 1 {
-                        assignm_input.percentage = 100.;
-                    }
-
                     let selected_text = assignm_input.value_id
                         .and_then(|id| selectable_vals.iter().find(|val| val.id == id))
                         .map(|val| val.name.clone())
                         .unwrap_or_else(|| "Select...".to_string());
 
                     ui.horizontal(|ui| {
-                        ui.add_enabled_ui(assignm_input_cnt > 1, |ui| {
-                            ui.add_sized(
-                                [70.0, Self::DEFAULT_INPUT_HEIGHT],
-                                egui::DragValue::new(&mut assignm_input.percentage)
-                                    .range(0.0..=100.0)
-                                    .speed(0.1)
-                                    .fixed_decimals(2)
-                                    .suffix("%"),
-                            );
-                        });
+                        ui.add_sized(
+                            [70.0, Self::DEFAULT_INPUT_HEIGHT],
+                            egui::DragValue::new(&mut assignm_input.percentage)
+                                .range(0.0..=100.0)
+                                .speed(0.1)
+                                .fixed_decimals(2)
+                                .suffix("%"),
+                        );
                         egui::ComboBox::from_id_salt(format!("{}:{}", catgy.id, input_idx))
                             .selected_text(selected_text)
                             .show_ui(ui, |ui| {
