@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use jiff::civil::Date;
 
@@ -179,10 +179,24 @@ impl AssetService {
         };
         let mut catgy_assignms: Vec<CategoryAssignment> = Vec::new();
         for (_, assignm_inputs) in input.catgy_id_to_assignm_inputs.iter() {
+            let mut percentage = 0.;
+            let mut seen_value_ids = HashSet::new();
             for assignm_input in assignm_inputs {
-                if let Some(id) = assignm_input.value_id {
-                    catgy_assignms.push(CategoryAssignment { value_id: id, ratio: assignm_input.percentage / 100. })
+                if assignm_input.percentage == 0. {
+                    return Err(Error::App("Category value has percentage of 0%".into()));
                 }
+                if let Some(id) = assignm_input.value_id {
+                    if !seen_value_ids.insert(id) {
+                        return Err(Error::App("Duplicate category values".into()));
+                    }
+                    percentage += assignm_input.percentage;
+                    catgy_assignms.push(CategoryAssignment { value_id: id, ratio: assignm_input.percentage / 100. });
+                } else {
+                    return Err(Error::App("Category value unset".into()));
+                }
+            }
+            if percentage > 100. {
+                return Err(Error::App("Percentages for a category add up to more than 100%".into()));
             }
         }
         self.repository.add_asset(&asset, &catgy_assignms)
