@@ -1,5 +1,5 @@
 pub struct NamedDistribution {
-    pub name: String,
+    pub name: Option<String>,
     pub amount: f64,
 }
 

@@ -6,6 +6,8 @@ use egui::{
 
 use crate::app::named_distribution::DatedDistribution;
 
+const NOT_SET_LABEL: &str = "<not set>";
+const NOT_SET_COLOR: (u8, u8, u8) = (128, 128, 128);
 
 pub fn draw_distribution_history(ui: &mut egui::Ui, title: &str, distr_history: &Vec<DatedDistribution>) {
     let desired_size = egui::vec2(600.0, 300.0);
@@ -46,7 +48,7 @@ pub fn draw_distribution_history(ui: &mut egui::Ui, title: &str, distr_history: 
     let total_gap_width = gap * (bar_count - 1.0).max(0.0);
     let bar_width = ((chart_rect.width() - total_gap_width) / bar_count).max(4.0);
 
-    let mut color_map: HashMap<String, Color32> = HashMap::new();
+    let mut color_map: HashMap<Option<String>, Color32> = HashMap::new();
     for dated in distr_history {
         for value in &dated.values {
             color_map
@@ -85,7 +87,7 @@ pub fn draw_distribution_history(ui: &mut egui::Ui, title: &str, distr_history: 
 
                 if segment_response.hovered() {
                     egui::Tooltip::for_widget(&segment_response).show(|ui| {
-                        ui.label(&value.name);
+                        ui.label(&value.name.clone().unwrap_or(NOT_SET_LABEL.to_string()));
                         ui.label(format!("{:.0}%", fraction * 100.0));
                         ui.label(format!("{:.2}", value.amount));
                     });
@@ -153,7 +155,7 @@ pub fn draw_distribution_history(ui: &mut egui::Ui, title: &str, distr_history: 
 fn draw_distribution_legend(
     painter: &egui::Painter,
     rect: Rect,
-    color_map: &HashMap<String, Color32>,
+    color_map: &HashMap<Option<String>, Color32>,
     ui: &egui::Ui,
     title: &str,
 ) {
@@ -179,12 +181,10 @@ fn draw_distribution_legend(
         if y + row_height > rect.bottom() {
             break;
         }
-
         let color_rect = Rect::from_min_max(
             Pos2::new(rect.left(), y + 3.0),
             Pos2::new(rect.left() + color_box_size, y + 3.0 + color_box_size),
         );
-
         painter.rect_filled(color_rect, 2.0, *color);
         painter.rect_stroke(
             color_rect,
@@ -192,11 +192,10 @@ fn draw_distribution_legend(
             Stroke::new(1.0, Color32::BLACK),
             StrokeKind::Inside,
         );
-
         painter.text(
             Pos2::new(rect.left() + color_box_size + 8.0, y),
             Align2::LEFT_TOP,
-            name,
+            name.clone().unwrap_or(NOT_SET_LABEL.to_string()),
             text_font.clone(),
             ui.visuals().text_color(),
         );
@@ -213,15 +212,19 @@ fn short_date(date: &str) -> &str {
     }
 }
 
-fn color_from_name(name: &str) -> Color32 {
-    let mut hash: u32 = 0;
-    for b in name.bytes() {
-        hash = hash.wrapping_mul(31).wrapping_add(b as u32);
+fn color_from_name(name: &Option<String>) -> Color32 {
+    if let Some(name) = name {
+        let mut hash: u32 = 0;
+        for b in name.bytes() {
+            hash = hash.wrapping_mul(31).wrapping_add(b as u32);
+        }
+
+        let r = 80 + ((hash & 0x7F) as u8);
+        let g = 80 + (((hash >> 8) & 0x7F) as u8);
+        let b = 80 + (((hash >> 16) & 0x7F) as u8);
+
+        return Color32::from_rgb(r, g, b)
+    } else {
+        return Color32::from_rgb(NOT_SET_COLOR.0, NOT_SET_COLOR.1, NOT_SET_COLOR.2);
     }
-
-    let r = 80 + ((hash & 0x7F) as u8);
-    let g = 80 + (((hash >> 8) & 0x7F) as u8);
-    let b = 80 + (((hash >> 16) & 0x7F) as u8);
-
-    Color32::from_rgb(r, g, b)
 }
