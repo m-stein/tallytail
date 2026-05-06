@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use eframe::egui;
+use egui::TextWrapMode;
 use egui_extras::DatePickerButton;
 use jiff::civil::Date;
 use jiff::Zoned;
@@ -650,30 +651,33 @@ impl DesktopApp {
 
 impl eframe::App for DesktopApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.label(egui::RichText::new("Asset Allocation Tracker").heading().size(Self::H1_SIZE));
-            ui.add_space(20.0);
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    self.show_page_button(ui, Page::AllocationDiagram, "Allocation Diagram", Self::init_alocation_diagram_page);
-                    self.show_page_button(ui, Page::AddAsset, "Add Asset", Self::init_add_asset_page);
-                    self.show_page_button(ui, Page::ConfigureCategories, "Configure Categories", Self::init_configure_categories_page);
-                    self.show_page_button(ui, Page::AddAllocationRecord, "Add Allocation Record", Self::init_add_allocation_record_page);
-                });
+            egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+                ui.label(egui::RichText::new("Asset Allocation Tracker").heading().size(Self::H1_SIZE));
                 ui.add_space(20.0);
-                ui.vertical(|ui| {
-                    match self.page {
-                        Page::AddAsset => self.show_add_asset_page(ui),
-                        Page::AllocationDiagram => self.show_allocation_diagram_page(ui),
-                        Page::ConfigureCategories => self.show_configure_categories_page(ui),
-                        Page::AddAllocationRecord => self.show_add_allocation_record_page(ui),
-                    }
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        self.show_page_button(ui, Page::AllocationDiagram, "Allocation Diagram", Self::init_alocation_diagram_page);
+                        self.show_page_button(ui, Page::AddAsset, "Add Asset", Self::init_add_asset_page);
+                        self.show_page_button(ui, Page::ConfigureCategories, "Configure Categories", Self::init_configure_categories_page);
+                        self.show_page_button(ui, Page::AddAllocationRecord, "Add Allocation Record", Self::init_add_allocation_record_page);
+                    });
                     ui.add_space(20.0);
-                    ui.label(egui::RichText::new("Message").heading().size(Self::H2_SIZE));
-                    ui.add_space(Self::SPACE_2);
-                    if let Some(message) = &self.message {
-                        ui.label(message);
-                    }
+                    ui.vertical(|ui| {
+                        match self.page {
+                            Page::AddAsset => self.show_add_asset_page(ui),
+                            Page::AllocationDiagram => self.show_allocation_diagram_page(ui),
+                            Page::ConfigureCategories => self.show_configure_categories_page(ui),
+                            Page::AddAllocationRecord => self.show_add_allocation_record_page(ui),
+                        }
+                        ui.add_space(20.0);
+                        ui.label(egui::RichText::new("Message").heading().size(Self::H2_SIZE));
+                        ui.add_space(Self::SPACE_2);
+                        if let Some(message) = &self.message {
+                            ui.label(message);
+                        }
+                    });
                 });
             });
         });

@@ -1,22 +1,15 @@
-Last added: T20
+Last added: T21
 
 Open
 ####
 
 T5: Allow for configuring one target allocation per category
 
-T6: Allow for adding assets that lack category values and show them as "Unknown" in diagrams
-
 T7: The user input on each page should be reset on successful save only but not when leaving the page
-
-T8: Allocation records must remember not only assets but also their values at record creation time
-    in order to stay constant over changes to asset values
 
 T11: The allocation diagram never shows more than 5 days into the past although more days are available
 
 T12: The allocation diagram should go from left to right from oldest to newest date
-
-T14: The entire app must be scrollable in case that the content exceeds the main window
 
 T18: Simplify ConfigureCategoryInput by using one datastructure for both new and existing entities.
      The distinction could be made by adding an Option<i64> for the entity ID which is None for
@@ -24,6 +17,10 @@ T18: Simplify ConfigureCategoryInput by using one datastructure for both new and
 
 T19: Discuss whether to store assets and categories in SQL or in RON and switch if RON is better
 
+T21: Discuss whether and how to approach the use case "Categories might be related one to another"
+     For instance, if an asset has value "Germany" for category "Country", it would automatically have
+     value "Europe" for a category "Region". Or if it has value "Banks" for category "Industry" it
+     automatically has value "Finance" for category "Sector"
 
 
 Closed
@@ -52,3 +49,10 @@ T17: Do not reload existing category values inside show_configure_categories_pag
 T15: Rename AppError Error and streamline its use. Remove all map_err calls
 
 T20: list_asset_category_values should not be called from the ui update function
+
+T8: Allocation records must remember not only assets but also their values at record creation time
+    in order to stay constant over changes to asset values
+    
+T6: Allow for adding assets that lack category values and show them as "<not set>" in diagrams
+
+T14: The entire app must be scrollable in case that the content exceeds the main window
