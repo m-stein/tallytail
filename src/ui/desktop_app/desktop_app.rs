@@ -18,6 +18,7 @@ use crate::app::error::Error;
 use crate::app::named_distribution::DatedDistribution;
 use crate::app::asset_reference_type::AssetReferenceType;
 use crate::ui::desktop_app::distribution_history::draw_distribution_history;
+use crate::ui::desktop_app::png::load_png_texture;
 
 pub struct PositionItem {
     pub id: i64,
@@ -55,9 +56,12 @@ pub struct DesktopApp {
     message: Option<String>,
 
     page: Page,
+    
+    squirrel_texture: egui::TextureHandle,
 }
 
 impl DesktopApp {
+    const MAX_CONTENT_WIDTH: f32 = 700.;
     const H1_SIZE: f32 = 32.0;
     const H2_SIZE: f32 = 24.0;
     const SPACE_1: f32 = 8.0;
@@ -66,7 +70,7 @@ impl DesktopApp {
     const DEFAULT_INPUT_HEIGHT: f32 = 19.0;
     const SYM_BTN_SIZE: f32 = DesktopApp::DEFAULT_INPUT_HEIGHT;
 
-    pub fn new(asset_service: AssetService) -> Self {
+    pub fn new(creat_ctx: &eframe::CreationContext<'_>, asset_service: AssetService) -> Self {
         let mut app = Self {
             asset_service,
 
@@ -89,6 +93,8 @@ impl DesktopApp {
             message: None,
 
             page: Page::AllocationDiagram,
+
+            squirrel_texture: load_png_texture(&creat_ctx.egui_ctx, "img/squirrel_68x68.png").unwrap(),
         };
         if let Err(e) = app.init_alocation_diagram_page() {
             app.message = Some(e.to_string());
@@ -647,6 +653,40 @@ impl DesktopApp {
             self.save_new_asset()
         }
     }
+
+    fn show_content(&mut self, ui: &mut egui::Ui) {
+        
+        ui.add_space(Self::SPACE_2);
+        ui.horizontal(|ui| {
+            ui.image((self.squirrel_texture.id(), egui::vec2(68.0, 68.0)));
+            ui.add_space(Self::SPACE_2);
+            ui.label(egui::RichText::new("Asset Allocation Tracker").heading().size(Self::H1_SIZE));
+        });
+        ui.add_space(Self::SPACE_3);
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                self.show_page_button(ui, Page::AllocationDiagram, "Allocation Diagram", Self::init_alocation_diagram_page);
+                self.show_page_button(ui, Page::AddAsset, "Add Asset", Self::init_add_asset_page);
+                self.show_page_button(ui, Page::ConfigureCategories, "Configure Categories", Self::init_configure_categories_page);
+                self.show_page_button(ui, Page::AddAllocationRecord, "Add Allocation Record", Self::init_add_allocation_record_page);
+            });
+            ui.add_space(20.0);
+            ui.vertical(|ui| {
+                match self.page {
+                    Page::AddAsset => self.show_add_asset_page(ui),
+                    Page::AllocationDiagram => self.show_allocation_diagram_page(ui),
+                    Page::ConfigureCategories => self.show_configure_categories_page(ui),
+                    Page::AddAllocationRecord => self.show_add_allocation_record_page(ui),
+                }
+                ui.add_space(20.0);
+                ui.label(egui::RichText::new("Message").heading().size(Self::H2_SIZE));
+                ui.add_space(Self::SPACE_2);
+                if let Some(message) = &self.message {
+                    ui.label(message);
+                }
+            });
+        });
+    }
 }
 
 impl eframe::App for DesktopApp {
@@ -654,30 +694,9 @@ impl eframe::App for DesktopApp {
         ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-                ui.label(egui::RichText::new("Asset Allocation Tracker").heading().size(Self::H1_SIZE));
-                ui.add_space(20.0);
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        self.show_page_button(ui, Page::AllocationDiagram, "Allocation Diagram", Self::init_alocation_diagram_page);
-                        self.show_page_button(ui, Page::AddAsset, "Add Asset", Self::init_add_asset_page);
-                        self.show_page_button(ui, Page::ConfigureCategories, "Configure Categories", Self::init_configure_categories_page);
-                        self.show_page_button(ui, Page::AddAllocationRecord, "Add Allocation Record", Self::init_add_allocation_record_page);
-                    });
-                    ui.add_space(20.0);
-                    ui.vertical(|ui| {
-                        match self.page {
-                            Page::AddAsset => self.show_add_asset_page(ui),
-                            Page::AllocationDiagram => self.show_allocation_diagram_page(ui),
-                            Page::ConfigureCategories => self.show_configure_categories_page(ui),
-                            Page::AddAllocationRecord => self.show_add_allocation_record_page(ui),
-                        }
-                        ui.add_space(20.0);
-                        ui.label(egui::RichText::new("Message").heading().size(Self::H2_SIZE));
-                        ui.add_space(Self::SPACE_2);
-                        if let Some(message) = &self.message {
-                            ui.label(message);
-                        }
-                    });
+                ui.vertical_centered(|ui| {
+                    ui.set_max_width(Self::MAX_CONTENT_WIDTH);
+                    self.show_content(ui);
                 });
             });
         });

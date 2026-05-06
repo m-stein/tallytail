@@ -27,6 +27,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Asset Allocation Tracker",
         options,
-        Box::new(move |_cc| Ok(Box::new(DesktopApp::new(service)))),
+        Box::new(move |creat_ctx| Ok(Box::new(DesktopApp::new(creat_ctx, service)))),
     )
 }

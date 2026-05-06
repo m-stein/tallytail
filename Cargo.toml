@@ -13,3 +13,4 @@ strum = "0.28.0"
 strum_macros = "0.28.0"
 serde = { version = "1", features = ["derive"] }
 ron = "0.12.1"
+png = "0.18.1"

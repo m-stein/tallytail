@@ -1,4 +1,4 @@
-Last added: T22
+Last added: T25
 
 Open
 ####
@@ -32,6 +32,8 @@ T24: Discuss whether and how to approach the use case "Remove existing categorie
 
 Closed
 ######
+
+T25: Add logo and vertically align content to center of the main window 
 
 T3: Support for having multiple differently weighted values for one category at an asset
 
