@@ -1,4 +1,4 @@
-Last added: T21
+Last added: T22
 
 Open
 ####
@@ -17,10 +17,17 @@ T18: Simplify ConfigureCategoryInput by using one datastructure for both new and
 
 T19: Discuss whether to store assets and categories in SQL or in RON and switch if RON is better
 
-T21: Discuss whether and how to approach the use case "Categories might be related one to another"
+T21: Discuss whether and how to approach the use case "Categories might be related one to another".
      For instance, if an asset has value "Germany" for category "Country", it would automatically have
      value "Europe" for a category "Region". Or if it has value "Banks" for category "Industry" it
      automatically has value "Finance" for category "Sector"
+
+T22: A windows 11 user could not enter an umlaut in text input except it was the first character.
+     With my windows 10 machine it worked though
+
+T23: Discuss whether and how to approach the use case "Modify existing assets"
+
+T24: Discuss whether and how to approach the use case "Remove existing categories or category values"
 
 
 Closed
