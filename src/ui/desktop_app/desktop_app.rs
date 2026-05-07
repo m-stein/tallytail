@@ -18,7 +18,12 @@ use crate::app::error::Error;
 use crate::app::named_distribution::DatedDistribution;
 use crate::app::asset_reference_type::AssetReferenceType;
 use crate::ui::desktop_app::distribution_history::draw_distribution_history;
+
+#[cfg(not(target_arch = "wasm32"))]
 use crate::ui::desktop_app::png::load_png_texture;
+
+#[cfg(target_arch = "wasm32")]
+use crate::ui::desktop_app::png::load_png_texture_from_bytes;
 
 pub struct PositionItem {
     pub id: i64,
@@ -71,6 +76,25 @@ impl DesktopApp {
     const SYM_BTN_SIZE: f32 = DesktopApp::DEFAULT_INPUT_HEIGHT;
 
     pub fn new(creat_ctx: &eframe::CreationContext<'_>, asset_service: AssetService) -> Self {
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let squirrel_texture =
+            load_png_texture(
+                &creat_ctx.egui_ctx,
+                "img/squirrel_68x68.png",
+            ).unwrap();
+
+        #[cfg(target_arch = "wasm32")]
+        let squirrel_texture =
+            load_png_texture_from_bytes(
+                &creat_ctx.egui_ctx,
+                "squirrel",
+                include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/img/squirrel_68x68.png"
+                )),
+            ).unwrap();
+
         let mut app = Self {
             asset_service,
 
@@ -94,7 +118,7 @@ impl DesktopApp {
 
             page: Page::AllocationDiagram,
 
-            squirrel_texture: load_png_texture(&creat_ctx.egui_ctx, "img/squirrel_68x68.png").unwrap(),
+            squirrel_texture,
         };
         if let Err(e) = app.init_alocation_diagram_page() {
             app.message = Some(e.to_string());

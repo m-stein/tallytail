@@ -1,15 +1,23 @@
 # Asset Allocation Tracker
 
-A simple desktop application to track your asset allocation.
+A simple app to track your asset allocation.
 
 ## Requirements
 
-- Rust (tested with rustc 1.94.1)
-- Cargo
+- Rust and cargo (tested with rustc 1.94.1)
 
-## Running the Application
+## Running the app from source
 
-You can run the application directly from the source code using:
+### Desktop target
 
-```bash
+```powershell
 cargo run --release
+```
+
+### Web target (WASM)
+
+```powershell
+rustup target add wasm32-unknown-unknown
+cargo install trunk
+trunk serve
+```

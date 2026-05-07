@@ -1,14 +1,14 @@
-use std::fs::File;
-use std::io::BufReader;
+use std::io::Cursor;
 
 use crate::app::error::Error;
 
-pub fn load_png_texture(ctx: &egui::Context, path: &str) -> Result<egui::TextureHandle, Error> {
-    
-    let file = File::open(path)
-        .map_err(|e| Error::StdIo(e.to_string()))?;
+pub fn load_png_texture_from_bytes(
+    ctx: &egui::Context,
+    name: &str,
+    bytes: &[u8],
+) -> Result<egui::TextureHandle, Error> {
 
-    let decoder = png::Decoder::new(BufReader::new(file));
+    let decoder = png::Decoder::new(Cursor::new(bytes));
     let mut reader = decoder
         .read_info()
         .map_err(|e| Error::App(e.to_string()))?;
@@ -27,7 +27,6 @@ pub fn load_png_texture(ctx: &egui::Context, path: &str) -> Result<egui::Texture
 
     let rgba = match info.color_type {
         png::ColorType::Rgba => bytes.to_vec(),
-
         png::ColorType::Rgb => {
             let mut out = Vec::with_capacity((info.width * info.height * 4) as usize);
             for chunk in bytes.chunks_exact(3) {
@@ -35,7 +34,6 @@ pub fn load_png_texture(ctx: &egui::Context, path: &str) -> Result<egui::Texture
             }
             out
         }
-
         other => {
             return Err(Error::App(format!(
                 "Unsupported PNG color type: {:?}",
@@ -50,8 +48,19 @@ pub fn load_png_texture(ctx: &egui::Context, path: &str) -> Result<egui::Texture
     );
 
     Ok(ctx.load_texture(
-        path,
+        name,
         image,
         egui::TextureOptions::NEAREST,
     ))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn load_png_texture(
+    ctx: &egui::Context,
+    path: &str,
+) -> Result<egui::TextureHandle, Error> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| Error::StdIo(e.to_string()))?;
+
+    load_png_texture_from_bytes(ctx, path, &bytes)
 }

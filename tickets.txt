@@ -1,4 +1,4 @@
-Last added: T25
+Last added: T26
 
 Open
 ####
@@ -28,6 +28,8 @@ T22: A windows 11 user could not enter an umlaut in text input except it was the
 T23: Discuss whether and how to approach the use case "Modify existing assets"
 
 T24: Discuss whether and how to approach the use case "Remove existing categories or category values"
+
+T26: Enable using the app remotely via web frontend
 
 
 Closed

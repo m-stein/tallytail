@@ -3,24 +3,29 @@ use std::fmt::{Display, Formatter};
 #[derive(Debug)]
 pub enum Error {
     App(String),
-    Rusqlite(String),
     StdIo(String),
     Ron(String),
+
+    #[cfg(not(target_arch = "wasm32"))]
+    Rusqlite(String),
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::App(msg) => write!(f, "App error: {msg}"),
-            Self::Rusqlite(msg) => write!(f, "Rusqlite error: {msg}"),
             Self::StdIo(msg) => write!(f, "StdIo error: {msg}"),
             Self::Ron(msg) => write!(f, "RON error: {msg}"),
+            
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Rusqlite(msg) => write!(f, "Rusqlite error: {msg}"),
         }
     }
 }
 
 impl std::error::Error for Error {}
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<rusqlite::Error> for Error {
     fn from(e: rusqlite::Error) -> Self {
         Error::Rusqlite(e.to_string())
