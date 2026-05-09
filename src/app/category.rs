@@ -1,6 +1,6 @@
 use crate::app::category_value::CategoryValue;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Category {
     pub id: i64,
     pub name: String,

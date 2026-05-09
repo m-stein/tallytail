@@ -1,12 +1,12 @@
 use jiff::civil::Date;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AllocationRecordInput {
     pub date: Date,
     pub positions: Vec<AllocationPositionInput>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AllocationPositionInput {
     pub asset_id: i64,
     pub amount: f64,
