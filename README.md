@@ -11,7 +11,7 @@ A simple app to track your asset allocation.
 ### Desktop target
 
 ```powershell
-cargo run --release
+cargo run --release --bin asset_allocation_tracker
 ```
 
 ### Web target (WASM)

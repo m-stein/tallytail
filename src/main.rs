@@ -1,17 +1,13 @@
 #![deny(warnings)]
 
-mod app;
-mod infra;
-mod ui;
+use asset_allocation_tracker::app::asset_service::AssetService;
+use asset_allocation_tracker::ui::desktop_app::desktop_app::DesktopApp;
 
-use app::asset_service::AssetService;
-use ui::desktop_app::desktop_app::DesktopApp;
+#[cfg(not(target_arch = "wasm32"))]
+use asset_allocation_tracker::infra::sqlite_asset_repository::SqliteAssetRepository;
 
 #[cfg(not(target_arch = "wasm32"))]
 use eframe::egui;
-
-#[cfg(not(target_arch = "wasm32"))]
-use infra::sqlite_asset_repository::SqliteAssetRepository;
 
 #[cfg(not(target_arch = "wasm32"))]
 const DB_PATH: &str = "./data/assets.sdb";
@@ -41,7 +37,7 @@ fn main() -> eframe::Result<()> {
 use wasm_bindgen::JsCast;
 
 #[cfg(target_arch = "wasm32")]
-use crate::infra::mock_asset_repository::MockAssetRepository;
+use asset_allocation_tracker::infra::mock_asset_repository::MockAssetRepository;
 
 #[cfg(target_arch = "wasm32")]
 fn main() {

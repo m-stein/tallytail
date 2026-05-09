@@ -1,5 +1,11 @@
 use std::fmt::{Display, Formatter};
 
+#[cfg(not(target_arch = "wasm32"))]
+use axum::{
+    http::StatusCode as AxumStatusCode,
+    response::{IntoResponse as IntoAxumResponse, Response as AxumResponse},
+};
+
 #[derive(Debug)]
 pub enum Error {
     App(String),
@@ -53,5 +59,28 @@ impl From<ron::error::SpannedError> for Error {
 impl From<String> for Error {
     fn from(e: String) -> Self {
         Error::App(e)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl IntoAxumResponse for Error {
+    fn into_response(self) -> AxumResponse {
+        let status = match self {
+            Error::App(_) => AxumStatusCode::BAD_REQUEST,
+            Error::StdIo(_) => AxumStatusCode::INTERNAL_SERVER_ERROR,
+            Error::Ron(_) => AxumStatusCode::INTERNAL_SERVER_ERROR,
+
+            #[cfg(not(target_arch = "wasm32"))]
+            Error::Rusqlite(_) => AxumStatusCode::INTERNAL_SERVER_ERROR,
+        };
+
+        (status, self.to_string()).into_response()
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl<T> From<std::sync::PoisonError<T>> for Error {
+    fn from(e: std::sync::PoisonError<T>) -> Self {
+        Error::App(e.to_string())
     }
 }
