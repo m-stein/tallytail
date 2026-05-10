@@ -15,15 +15,15 @@ use crate::app::category::Category;
 use crate::app::category_value::CategoryValue;
 use crate::app::configure_categories_input::{CategoryValueInput, ConfigureCatgoriesInput, NewCategoryInput};
 use crate::app::error::Error;
-use crate::app::named_distribution::DatedDistribution;
+use crate::app::allocation_diagram_data::AllocationDiagramData;
 use crate::app::asset_reference_type::AssetReferenceType;
-use crate::ui::desktop_app::distribution_history::draw_distribution_history;
+use crate::ui::egui::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::ui::desktop_app::png::load_png_texture;
+use crate::ui::egui::png::load_png_texture;
 
 #[cfg(target_arch = "wasm32")]
-use crate::ui::desktop_app::png::load_png_texture_from_bytes;
+use crate::ui::egui::png::load_png_texture_from_bytes;
 
 pub struct PositionItem {
     pub id: i64,
@@ -39,7 +39,7 @@ enum Page {
     AddAllocationRecord,
 }
 
-pub struct DesktopApp {
+pub struct App {
     asset_service: AssetService,
 
     allocation_record_date: Date,
@@ -54,7 +54,7 @@ pub struct DesktopApp {
     existing_catg_values: HashMap<i64, Vec<CategoryValue>>,
 
     alloc_diagram_category_id: Option<i64>,
-    alloc_diagram_data: Option<Vec<DatedDistribution>>,
+    alloc_diagram_data: Option<AllocationDiagramData>,
 
     add_asset_input: AddAssetInput,
 
@@ -65,7 +65,7 @@ pub struct DesktopApp {
     squirrel_texture: egui::TextureHandle,
 }
 
-impl DesktopApp {
+impl App {
     const MAX_CONTENT_WIDTH: f32 = 700.;
     const H1_SIZE: f32 = 32.0;
     const H2_SIZE: f32 = 24.0;
@@ -73,7 +73,7 @@ impl DesktopApp {
     const SPACE_2: f32 = 12.0;
     const SPACE_3: f32 = 24.0;
     const DEFAULT_INPUT_HEIGHT: f32 = 19.0;
-    const SYM_BTN_SIZE: f32 = DesktopApp::DEFAULT_INPUT_HEIGHT;
+    const SYM_BTN_SIZE: f32 = App::DEFAULT_INPUT_HEIGHT;
 
     pub fn new(creat_ctx: &eframe::CreationContext<'_>, asset_service: AssetService) -> Self {
 
@@ -294,7 +294,7 @@ impl DesktopApp {
 
     fn reload_alloc_diagram_data(&mut self) {
         if let Some(category_id) = self.alloc_diagram_category_id {
-            match self.asset_service.get_distribution_for_category(category_id, 5) {
+            match self.asset_service.get_alloc_diagram_data(category_id, 5) {
                 Ok(data) => {
                     self.alloc_diagram_data = Some(data)
                 }
@@ -345,8 +345,8 @@ impl DesktopApp {
             self.reload_alloc_diagram_data();
             self.reload_latest_allocation_record();
         }
-        if let Some(distr_history) = self.alloc_diagram_data.as_ref() {
-            draw_distribution_history(ui, self.allocation_diagram_category_selected_text(), distr_history);
+        if let Some(data) = self.alloc_diagram_data.as_ref() {
+            draw_percent_stacked_bar_chart(ui, data);
         } else if let Some(record) = &self.latest_allocation_record {
             let total: f64 = record.positions.iter().map(|p| p.amount).sum();
 
@@ -713,7 +713,7 @@ impl DesktopApp {
     }
 }
 
-impl eframe::App for DesktopApp {
+impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
         egui::CentralPanel::default().show_inside(ui, |ui| {

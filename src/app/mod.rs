@@ -10,5 +10,5 @@ pub mod category_value;
 pub mod category_assignment;
 pub mod configure_categories_input;
 pub mod error;
-pub mod named_distribution;
+pub mod allocation_diagram_data;
 pub mod repository;

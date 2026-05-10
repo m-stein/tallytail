@@ -1,1 +1,1 @@
-pub mod desktop_app;
+pub mod egui;

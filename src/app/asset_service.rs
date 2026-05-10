@@ -12,7 +12,7 @@ use crate::app::repository::AssetRepository;
 use crate::app::category::Category;
 use crate::app::category_value::CategoryValue;
 use crate::app::category_assignment::CategoryAssignment;
-use crate::app::named_distribution::{DatedDistribution, NamedDistribution};
+use crate::app::allocation_diagram_data::{AllocationDiagramBar, AllocationDiagramData, AllocationDiagramSegment};
 
 pub struct AssetService {
     repository: Box<dyn AssetRepository>,
@@ -104,74 +104,77 @@ impl AssetService {
         (remaining, first_error)
     }
 
-    pub fn calc_distribution_for_category(
+    pub fn create_alloc_diagram_data(
         &self,
         records: Vec<AllocationRecord>,
         category_name: &str,
-    ) -> Vec<DatedDistribution> {
-        records
-            .into_iter()
-            .map(|record| {
-                let mut value_amounts: HashMap<String, f64> = HashMap::new(); /* value name -> summed-up amount */
-                let mut total_amount: f64 = 0.;
-                let mut total_categorized_amount: f64 = 0.;
+    ) -> AllocationDiagramData {
+        AllocationDiagramData {
+            title: category_name.to_string(),
+            bars: records
+                .into_iter()
+                .map(|record| {
+                    let mut value_amounts: HashMap<String, f64> = HashMap::new(); /* value name -> summed-up amount */
+                    let mut total_amount: f64 = 0.;
+                    let mut total_categorized_amount: f64 = 0.;
 
-                for position in record.positions {
-                    total_amount += position.amount;
-                    let Some(category) = position
-                        .asset
-                        .categories
-                        .iter()
-                        .find(|category| category.name == category_name)
-                    else {
-                        continue;
-                    };
+                    for position in record.positions {
+                        total_amount += position.amount;
+                        let Some(category) = position
+                            .asset
+                            .categories
+                            .iter()
+                            .find(|category| category.name == category_name)
+                        else {
+                            continue;
+                        };
 
-                    for value in &category.values {
-                        let value_amount = position.amount as f64 * value.ratio;
-                        *value_amounts.entry(value.name.clone()).or_insert(0.0) += value_amount;
-                        total_categorized_amount += value_amount;
+                        for value in &category.values {
+                            let value_amount = position.amount as f64 * value.ratio;
+                            *value_amounts.entry(value.name.clone()).or_insert(0.0) += value_amount;
+                            total_categorized_amount += value_amount;
+                        }
                     }
-                }
 
-                let mut value_distributions: Vec<NamedDistribution> = value_amounts
-                    .into_iter()
-                    .map(|(name, amount)| NamedDistribution {
-                        name: Some(name),
-                        amount: amount,
-                    })
-                    .collect();
+                    let mut value_distributions: Vec<AllocationDiagramSegment> = value_amounts
+                        .into_iter()
+                        .map(|(name, amount)| AllocationDiagramSegment {
+                            name: Some(name),
+                            amount: amount,
+                        })
+                        .collect();
 
-                if total_amount > total_categorized_amount {
-                    value_distributions.push(
-                        NamedDistribution {
-                            name: None,
-                            amount: total_amount - total_categorized_amount });
-                }
-                value_distributions.sort_by(|a, b| {
-                    b.amount
-                        .partial_cmp(&a.amount)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then_with(|| a.name.cmp(&b.name))
-                });
+                    if total_amount > total_categorized_amount {
+                        value_distributions.push(
+                            AllocationDiagramSegment {
+                                name: None,
+                                amount: total_amount - total_categorized_amount });
+                    }
+                    value_distributions.sort_by(|a, b| {
+                        b.amount
+                            .partial_cmp(&a.amount)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                            .then_with(|| a.name.cmp(&b.name))
+                    });
 
-                DatedDistribution {
-                    date: record.date,
-                    values: value_distributions,
-                }
-            })
-            .collect()
+                    AllocationDiagramBar {
+                        date: record.date,
+                        segments: value_distributions,
+                    }
+                })
+                .collect()
+        }
     }
 
-    pub fn get_distribution_for_category(
+    pub fn get_alloc_diagram_data(
         &self,
         category_id: i64,
         days: i64,
-    ) -> Result<Vec<DatedDistribution>, Error> {
+    ) -> Result<AllocationDiagramData, Error> {
 
         let records = self.repository.get_latest_allocation_records(days as usize)?;
         let category_name = self.repository.get_category_name_by_id(category_id)?;
-        Ok(self.calc_distribution_for_category(records, &category_name))
+        Ok(self.create_alloc_diagram_data(records, &category_name))
     }
 
     pub fn add_asset(&mut self, input: &AddAssetInput) -> Result<(), Error> {

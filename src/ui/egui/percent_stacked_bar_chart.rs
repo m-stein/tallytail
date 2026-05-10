@@ -4,17 +4,17 @@ use egui::{
     Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, StrokeKind,
 };
 
-use crate::app::named_distribution::DatedDistribution;
+use crate::app::allocation_diagram_data::AllocationDiagramData;
 
 const NOT_SET_LABEL: &str = "<not set>";
 const NOT_SET_COLOR: (u8, u8, u8) = (128, 128, 128);
 
-pub fn draw_distribution_history(ui: &mut egui::Ui, title: &str, distr_history: &Vec<DatedDistribution>) {
+pub fn draw_percent_stacked_bar_chart(ui: &mut egui::Ui, data: &AllocationDiagramData) {
     let desired_size = egui::vec2(600.0, 300.0);
     let (rect, _response) = ui.allocate_exact_size(desired_size, Sense::hover());
     let painter = ui.painter_at(rect);
 
-    if distr_history.is_empty() {
+    if data.bars.is_empty() {
         painter.text(
             rect.center(),
             Align2::CENTER_CENTER,
@@ -43,30 +43,30 @@ pub fn draw_distribution_history(ui: &mut egui::Ui, title: &str, distr_history: 
         Pos2::new(rect.right() - outer_margin, rect.bottom() - outer_margin),
     );
 
-    let bar_count = distr_history.len() as f32;
+    let bar_count = data.bars.len() as f32;
     let gap = 2.0;
     let total_gap_width = gap * (bar_count - 1.0).max(0.0);
     let bar_width = ((chart_rect.width() - total_gap_width) / bar_count).max(4.0);
 
     let mut color_map: HashMap<Option<String>, Color32> = HashMap::new();
-    for dated in distr_history {
-        for value in &dated.values {
+    for bar in &data.bars {
+        for segment in &bar.segments {
             color_map
-                .entry(value.name.clone())
-                .or_insert_with(|| color_from_name(&value.name));
+                .entry(segment.name.clone())
+                .or_insert_with(|| color_from_name(&segment.name));
         }
     }
 
-    for (bar_idx, dated) in distr_history.iter().enumerate() {
+    for (bar_idx, bar) in data.bars.iter().enumerate() {
         let x0 = chart_rect.left() + bar_idx as f32 * (bar_width + gap);
         let x1 = x0 + bar_width;
 
-        let total: f64 = dated.values.iter().map(|v| v.amount).sum();
+        let total: f64 = bar.segments.iter().map(|v| v.amount).sum();
 
         if total > 0.0 {
             let mut y_bottom = chart_rect.bottom();
 
-            for (segment_idx, value) in dated.values.iter().enumerate() {
+            for (segment_idx, value) in bar.segments.iter().enumerate() {
                 let fraction = value.amount / total;
                 let segment_height = chart_rect.height() * fraction as f32;
                 let y_top = y_bottom - segment_height;
@@ -81,7 +81,7 @@ pub fn draw_distribution_history(ui: &mut egui::Ui, title: &str, distr_history: 
 
                 let segment_response = ui.interact(
                     segment_rect,
-                    egui::Id::new(("distribution_segment", bar_idx, segment_idx)),
+                    egui::Id::new(("psbc_segment", bar_idx, segment_idx)),
                     Sense::hover(),
                 );
 
@@ -126,7 +126,7 @@ pub fn draw_distribution_history(ui: &mut egui::Ui, title: &str, distr_history: 
         painter.text(
             label_pos,
             Align2::CENTER_TOP,
-            short_date(&dated.date),
+            short_date(&bar.date),
             FontId::default(),
             ui.visuals().text_color(),
         );
@@ -138,21 +138,21 @@ pub fn draw_distribution_history(ui: &mut egui::Ui, title: &str, distr_history: 
 
         let label_response = ui.interact(
             label_rect,
-            egui::Id::new(("date_label", bar_idx)),
+            egui::Id::new(("psbc_label", bar_idx)),
             Sense::hover(),
         );
 
         if label_response.hovered() {
             egui::Tooltip::for_widget(&label_response).show(|ui| {
-                ui.label(&dated.date);
+                ui.label(&bar.date);
             });
         }
     }
 
-    draw_distribution_legend(&painter, legend_rect, &color_map, ui, title);
+    draw_legend(&painter, legend_rect, &color_map, ui, &data.title);
 }
 
-fn draw_distribution_legend(
+fn draw_legend(
     painter: &egui::Painter,
     rect: Rect,
     color_map: &HashMap<Option<String>, Color32>,

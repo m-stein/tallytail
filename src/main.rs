@@ -1,7 +1,7 @@
 #![deny(warnings)]
 
 use asset_allocation_tracker::app::asset_service::AssetService;
-use asset_allocation_tracker::ui::desktop_app::desktop_app::DesktopApp;
+use asset_allocation_tracker::ui::egui::app::App;
 
 #[cfg(not(target_arch = "wasm32"))]
 use asset_allocation_tracker::infra::sqlite_asset_repository::SqliteAssetRepository;
@@ -29,7 +29,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Asset Allocation Tracker",
         options,
-        Box::new(move |creat_ctx| Ok(Box::new(DesktopApp::new(creat_ctx, service)))),
+        Box::new(move |creat_ctx| Ok(Box::new(App::new(creat_ctx, service)))),
     )
 }
 
@@ -61,7 +61,7 @@ fn main() {
                     let repository = MockAssetRepository::new();
                     let service = AssetService::new(Box::new(repository));
 
-                    Ok(Box::new(DesktopApp::new(cc, service)))
+                    Ok(Box::new(App::new(cc, service)))
                 }),
             )
             .await
