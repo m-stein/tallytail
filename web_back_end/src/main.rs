@@ -1,11 +1,11 @@
-use std::{fs, net::SocketAddr};
+use std::net::SocketAddr;
 
 use axum::{Json, Router, routing::get};
 use eyre::Result;
-use core_lib::{Data, User};
 use tower_http::cors::CorsLayer;
 
-const DATA_PATH: &str = "../data/data.ron";
+use core_lib::User;
+use infra_lib::read_users;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,12 +25,6 @@ async fn main() -> Result<()> {
 async fn get_users() -> Result<Json<Vec<User>>, AppError> {
     let users = read_users()?;
     Ok(Json(users))
-}
-
-fn read_users() -> Result<Vec<User>> {
-    let text = fs::read_to_string(DATA_PATH)?;
-    let data: Data = ron::from_str(&text)?;
-    Ok(data.users)
 }
 
 struct AppError(eyre::Report);

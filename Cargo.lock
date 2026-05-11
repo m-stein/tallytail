@@ -799,6 +799,7 @@ dependencies = [
  "core_lib",
  "eframe",
  "eyre",
+ "infra_lib",
  "ron",
  "ui_lib",
 ]
@@ -1825,6 +1826,15 @@ dependencies = [
  "hashbrown 0.17.1",
  "serde",
  "serde_core",
+]
+
+[[package]]
+name = "infra_lib"
+version = "0.1.0"
+dependencies = [
+ "core_lib",
+ "eyre",
+ "ron",
 ]
 
 [[package]]
@@ -4220,8 +4230,7 @@ dependencies = [
  "axum",
  "core_lib",
  "eyre",
- "ron",
- "serde",
+ "infra_lib",
  "tokio",
  "tower-http",
 ]

@@ -1,9 +1,9 @@
 [package]
-name = "ui_lib"
+name = "infra_lib"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 core_lib = { path = "../core_lib" }
-eframe = "0.34"
+ron = "0.8"
 eyre = "0.6"

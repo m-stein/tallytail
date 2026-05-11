@@ -6,8 +6,7 @@ edition = "2024"
 [dependencies]
 core_lib = { path = "../core_lib" }
 ui_lib = { path = "../ui_lib" }
-
+infra_lib = { path = "../infra_lib" }
 eframe = { version = "0.34", features = ["wgpu"] }
-
 ron = "0.8"
 eyre = "0.6"
