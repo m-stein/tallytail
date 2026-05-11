@@ -1,8 +1,8 @@
 use std::sync::mpsc;
 
-use ui::{UserApp, UserResult};
+use ui_lib::{UserApp, UserResult};
 use eyre::Result;
-use shared::User;
+use core_lib::User;
 use wasm_bindgen::JsCast;
 
 const SERVER_URL: &str = "http://127.0.0.1:3000/users";

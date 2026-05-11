@@ -1,8 +1,8 @@
 use std::{fs, sync::mpsc, thread};
 
-use ui::{UserApp, UserResult};
+use ui_lib::{UserApp, UserResult};
 use eyre::Result;
-use shared::{Data, User};
+use core_lib::{Data, User};
 
 const DATA_PATH: &str = "../data/data.ron";
 

@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-shared = { path = "../shared" }
-ui = { path = "../ui" }
+core_lib = { path = "../core_lib" }
+ui_lib = { path = "../ui_lib" }
 
 eframe = { version = "0.34", features = ["wgpu"] }
 

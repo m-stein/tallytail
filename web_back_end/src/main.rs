@@ -2,7 +2,7 @@ use std::{fs, net::SocketAddr};
 
 use axum::{Json, Router, routing::get};
 use eyre::Result;
-use shared::{Data, User};
+use core_lib::{Data, User};
 use tower_http::cors::CorsLayer;
 
 const DATA_PATH: &str = "../data/data.ron";
@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
-    println!("Server läuft auf http://{addr}");
+    println!("Web back end läuft auf http://{addr}");
     axum::serve(listener, app).await?;
 
     Ok(())
@@ -48,7 +48,7 @@ impl axum::response::IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Server error: {}", self.0),
+            format!("Web back end error: {}", self.0),
         )
             .into_response()
     }

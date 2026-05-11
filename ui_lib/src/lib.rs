@@ -2,7 +2,7 @@ use std::sync::mpsc::Receiver;
 
 use eframe::egui;
 use eyre::Result;
-use shared::User;
+use core_lib::User;
 
 pub type UserResult = Result<Vec<User>>;
 

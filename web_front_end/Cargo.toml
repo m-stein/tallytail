@@ -1,5 +1,5 @@
 [package]
-name = "client"
+name = "web_front_end"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,8 +7,8 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-shared = { path = "../shared" }
-ui = { path = "../ui" }
+core_lib = { path = "../core_lib" }
+ui_lib = { path = "../ui_lib" }
 
 eframe = { version = "0.34", default-features = false, features = [
     "default_fonts",
