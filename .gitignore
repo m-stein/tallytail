@@ -1,4 +1,3 @@
-/target
-/data
-/allocation_records
-/dist
+target
+data
+client/dist

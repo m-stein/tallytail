@@ -1,0 +1,12 @@
+[package]
+name = "desktop"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+shared = { path = "../shared" }
+
+eframe = { version = "0.34", features = ["wgpu"] }
+
+ron = "0.8"
+eyre = "0.6"
