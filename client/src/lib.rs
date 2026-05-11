@@ -1,71 +1,26 @@
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc;
 
-use wasm_bindgen::JsCast;
-use eframe::egui;
+use ui::{UserApp, UserResult};
 use eyre::Result;
 use shared::User;
+use wasm_bindgen::JsCast;
 
 const SERVER_URL: &str = "http://127.0.0.1:3000/users";
-
-#[derive(Default)]
-pub struct ClientApp {
-    users: Vec<User>,
-    error: Option<String>,
-    loading: bool,
-    receiver: Option<Receiver<Result<Vec<User>>>>,
-}
-
-impl eframe::App for ClientApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        if let Some(receiver) = &self.receiver {
-            if let Ok(result) = receiver.try_recv() {
-                self.loading = false;
-
-                match result {
-                    Ok(users) => {
-                        self.users = users;
-                        self.error = None;
-                    }
-                    Err(error) => {
-                        self.error = Some(error.to_string());
-                    }
-                }
-
-                self.receiver = None;
-            }
-        }
-        if ui.button("List users").clicked() {
-            self.loading = true;
-            self.error = None;
-
-            let (sender, receiver) = mpsc::channel();
-            self.receiver = Some(receiver);
-
-            wasm_bindgen_futures::spawn_local(async move {
-                let result = fetch_users().await;
-                let _ = sender.send(result);
-            });
-        }
-
-        if self.loading {
-            ui.label("Loading...");
-        }
-
-        if let Some(error) = &self.error {
-            ui.colored_label(egui::Color32::RED, error);
-        }
-
-        ui.separator();
-
-        for user in &self.users {
-            ui.label(&user.name);
-        }
-    }
-}
 
 async fn fetch_users() -> Result<Vec<User>> {
     let users = reqwest::get(SERVER_URL).await?.json::<Vec<User>>().await?;
     Ok(users)
+}
+
+fn start_loading_users() -> mpsc::Receiver<UserResult> {
+    let (sender, receiver) = mpsc::channel();
+
+    wasm_bindgen_futures::spawn_local(async move {
+        let result = fetch_users().await;
+        let _ = sender.send(result);
+    });
+
+    receiver
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -73,7 +28,6 @@ async fn fetch_users() -> Result<Vec<User>> {
 pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
     console_error_panic_hook::set_once();
 
-    let web_options = eframe::WebOptions::default();
     let canvas = web_sys::window()
         .and_then(|window| window.document())
         .and_then(|document| document.get_element_by_id("the_canvas_id"))
@@ -83,8 +37,8 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
     eframe::WebRunner::new()
         .start(
             canvas,
-            web_options,
-            Box::new(|_cc| Ok(Box::new(ClientApp::default()))),
+            eframe::WebOptions::default(),
+            Box::new(|_cc| Ok(Box::new(UserApp::new(start_loading_users)))),
         )
         .await
 }

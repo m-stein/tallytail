@@ -1,3 +1,3 @@
 [workspace]
 resolver = "2"
-members = ["shared", "app_ui", "server", "client", "desktop"]
+members = ["shared", "ui", "server", "client", "desktop"]
