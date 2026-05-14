@@ -8,4 +8,8 @@ $commands = @(
 foreach ($cmd in $commands) {
     Write-Host "$cmd"
     Invoke-Expression $cmd
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "error: command failed: $cmd"
+        exit $LASTEXITCODE
+    }
 }
