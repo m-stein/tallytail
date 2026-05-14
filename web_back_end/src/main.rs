@@ -5,12 +5,17 @@ use eyre::Result;
 use tower_http::cors::CorsLayer;
 
 use core_lib::User;
-use infra_lib::read_users;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+struct AddUserRequest {
+    name: String,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let app = Router::new()
-        .route("/users", get(get_users))
+        .route("/users", get(get_users).post(add_user))
         .layer(CorsLayer::permissive());
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -23,8 +28,13 @@ async fn main() -> Result<()> {
 }
 
 async fn get_users() -> Result<Json<Vec<User>>, AppError> {
-    let users = read_users()?;
+    let users = infra_lib::read_users()?;
     Ok(Json(users))
+}
+
+async fn add_user(Json(request): Json<AddUserRequest>) -> Result<(), AppError> {
+    infra_lib::add_user(request.name)?;
+    Ok(())
 }
 
 struct AppError(eyre::Report);

@@ -1,9 +1,15 @@
 use std::sync::mpsc;
 
-use ui_lib::{UserApp, UserResult};
+use ui_lib::{UserApp, UserResult, UnitResult};
 use eyre::Result;
 use core_lib::User;
 use wasm_bindgen::JsCast;
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct AddUserRequest {
+    name: String,
+}
 
 const SERVER_URL: &str = "http://127.0.0.1:3000/users";
 
@@ -17,6 +23,28 @@ fn start_loading_users() -> mpsc::Receiver<UserResult> {
 
     wasm_bindgen_futures::spawn_local(async move {
         let result = fetch_users().await;
+        let _ = sender.send(result);
+    });
+
+    receiver
+}
+
+async fn add_user(name: String) -> Result<()> {
+    reqwest::Client::new()
+        .post(SERVER_URL)
+        .json(&AddUserRequest { name })
+        .send()
+        .await?
+        .error_for_status()?;
+
+    Ok(())
+}
+
+fn start_adding_user(name: String) -> mpsc::Receiver<UnitResult> {
+    let (sender, receiver) = mpsc::channel();
+
+    wasm_bindgen_futures::spawn_local(async move {
+        let result = add_user(name).await;
         let _ = sender.send(result);
     });
 
@@ -38,7 +66,7 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
         .start(
             canvas,
             eframe::WebOptions::default(),
-            Box::new(|_cc| Ok(Box::new(UserApp::new(start_loading_users)))),
+            Box::new(|_cc| Ok(Box::new(UserApp::new(start_loading_users, start_adding_user)))),
         )
         .await
 }
