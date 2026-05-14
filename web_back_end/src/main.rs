@@ -4,7 +4,7 @@ use axum::{Json, Router, routing::get};
 use eyre::Result;
 use tower_http::cors::CorsLayer;
 
-use core_lib::User;
+use core_lib::{AllocationRecord, User};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -16,6 +16,7 @@ struct AddUserRequest {
 async fn main() -> Result<()> {
     let app = Router::new()
         .route("/users", get(get_users).post(add_user))
+        .route("/get_latest_record", get(get_latest_record))
         .layer(CorsLayer::permissive());
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -30,6 +31,11 @@ async fn main() -> Result<()> {
 async fn get_users() -> Result<Json<Vec<User>>, AppError> {
     let users = infra_lib::list_users()?;
     Ok(Json(users))
+}
+
+async fn get_latest_record() -> Result<Json<Option<AllocationRecord>>, AppError> {
+    let res = infra_lib::get_latest_record()?;
+    Ok(Json(res))
 }
 
 async fn add_user(Json(request): Json<AddUserRequest>) -> Result<(), AppError> {

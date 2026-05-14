@@ -2,8 +2,7 @@ use std::{sync::mpsc, thread};
 
 use eyre::eyre;
 
-use infra_lib::list_users;
-use ui_lib::{EframeApp, ListUsersResult, NoResult};
+use ui_lib::{EframeApp, GetLatestRecordRx, ListUsersResult, NoResult};
 
 fn main() -> eyre::Result<()> {
     eframe::run_native(
@@ -11,8 +10,9 @@ fn main() -> eyre::Result<()> {
         eframe::NativeOptions::default(),
         Box::new(|_cc| {
             Ok(Box::new(EframeApp::new(
-                snd_req_list_users,
-                snd_req_add_user,
+                start_get_latest_record,
+                start_list_users,
+                start_add_user,
             )))
         }),
     )
@@ -20,7 +20,7 @@ fn main() -> eyre::Result<()> {
     Ok(())
 }
 
-fn snd_req_add_user(name: String) -> mpsc::Receiver<NoResult> {
+fn start_add_user(name: String) -> mpsc::Receiver<NoResult> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
         let result = infra_lib::add_user(name);
@@ -29,11 +29,20 @@ fn snd_req_add_user(name: String) -> mpsc::Receiver<NoResult> {
     receiver
 }
 
-fn snd_req_list_users() -> mpsc::Receiver<ListUsersResult> {
+fn start_list_users() -> mpsc::Receiver<ListUsersResult> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
-        let result = list_users();
+        let result = infra_lib::list_users();
         let _ = sender.send(result);
     });
     receiver
+}
+
+fn start_get_latest_record() -> GetLatestRecordRx {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let result = infra_lib::get_latest_record();
+        let _ = tx.send(result);
+    });
+    rx
 }

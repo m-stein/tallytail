@@ -1,9 +1,9 @@
 use std::sync::mpsc;
 
-use core_lib::User;
+use core_lib::{AllocationRecord, User};
 use eyre::Result;
 use serde::Serialize;
-use ui_lib::{EframeApp, ListUsersResult, NoResult};
+use ui_lib::{EframeApp, GetLatestRecordRx, ListUsersResult, NoResult};
 use wasm_bindgen::JsCast;
 
 #[derive(Serialize)]
@@ -12,21 +12,35 @@ struct AddUserRequest {
 }
 
 const SERVER_URL: &str = "http://127.0.0.1:3000/users";
+const GET_LATEST_RECORD_URL: &str = "http://127.0.0.1:3000/get_latest_record";
 
 async fn fetch_users() -> Result<Vec<User>> {
-    let users = reqwest::get(SERVER_URL).await?.json::<Vec<User>>().await?;
-    Ok(users)
+    Ok(reqwest::get(SERVER_URL).await?.json::<Vec<User>>().await?)
 }
 
-fn start_loading_users() -> mpsc::Receiver<ListUsersResult> {
-    let (sender, receiver) = mpsc::channel();
+async fn get_latest_record() -> Result<Option<AllocationRecord>> {
+    Ok(reqwest::get(GET_LATEST_RECORD_URL)
+        .await?
+        .json::<Option<AllocationRecord>>()
+        .await?)
+}
 
+fn start_list_users() -> mpsc::Receiver<ListUsersResult> {
+    let (sender, receiver) = mpsc::channel();
     wasm_bindgen_futures::spawn_local(async move {
         let result = fetch_users().await;
         let _ = sender.send(result);
     });
-
     receiver
+}
+
+fn start_get_latest_record() -> GetLatestRecordRx {
+    let (tx, rx) = mpsc::channel();
+    wasm_bindgen_futures::spawn_local(async move {
+        let result = get_latest_record().await;
+        let _ = tx.send(result);
+    });
+    rx
 }
 
 async fn add_user(name: String) -> Result<()> {
@@ -40,7 +54,7 @@ async fn add_user(name: String) -> Result<()> {
     Ok(())
 }
 
-fn start_adding_user(name: String) -> mpsc::Receiver<NoResult> {
+fn start_add_user(name: String) -> mpsc::Receiver<NoResult> {
     let (sender, receiver) = mpsc::channel();
 
     wasm_bindgen_futures::spawn_local(async move {
@@ -67,8 +81,9 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
             eframe::WebOptions::default(),
             Box::new(|_cc| {
                 Ok(Box::new(EframeApp::new(
-                    start_loading_users,
-                    start_adding_user,
+                    start_get_latest_record,
+                    start_list_users,
+                    start_add_user,
                 )))
             }),
         )
