@@ -11,7 +11,6 @@ core_lib = { path = "../core_lib" }
 ui_lib = { path = "../ui_lib" }
 eframe = { version = "0.34", default-features = false, features = [
     "default_fonts",
-    "glow",
     "web_screen_reader",
 ] }
 serde = { version = "1", features = ["derive"] }
