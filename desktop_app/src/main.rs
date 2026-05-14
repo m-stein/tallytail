@@ -1,40 +1,39 @@
 use std::{sync::mpsc, thread};
 
-use eyre::Result;
+use eyre::eyre;
 
-use infra_lib::read_users;
-use ui_lib::{UserApp, UserResult, UnitResult};
+use infra_lib::list_users;
+use ui_lib::{EframeApp, ListUsersResult, NoResult};
 
-fn main() -> Result<()> {
-    let native_options = eframe::NativeOptions::default();
-
+fn main() -> eyre::Result<()> {
     eframe::run_native(
-        "RON egui Desktop POC",
-        native_options,
-        Box::new(|_cc| Ok(Box::new(UserApp::new(start_loading_users, start_adding_user)))),
-    )?;
-
+        "Asset Allocation Tracker",
+        eframe::NativeOptions::default(),
+        Box::new(|_cc| {
+            Ok(Box::new(EframeApp::new(
+                snd_req_list_users,
+                snd_req_add_user,
+            )))
+        }),
+    )
+    .map_err(|e| eyre!(e.to_string()))?;
     Ok(())
 }
 
-fn start_adding_user(name: String) -> mpsc::Receiver<UnitResult> {
+fn snd_req_add_user(name: String) -> mpsc::Receiver<NoResult> {
     let (sender, receiver) = mpsc::channel();
-
     thread::spawn(move || {
         let result = infra_lib::add_user(name);
         let _ = sender.send(result);
     });
-
     receiver
 }
 
-fn start_loading_users() -> mpsc::Receiver<UserResult> {
+fn snd_req_list_users() -> mpsc::Receiver<ListUsersResult> {
     let (sender, receiver) = mpsc::channel();
-
     thread::spawn(move || {
-        let result = read_users();
+        let result = list_users();
         let _ = sender.send(result);
     });
-
     receiver
 }

@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
 }
 
 async fn get_users() -> Result<Json<Vec<User>>, AppError> {
-    let users = infra_lib::read_users()?;
+    let users = infra_lib::list_users()?;
     Ok(Json(users))
 }
 

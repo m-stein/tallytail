@@ -1,10 +1,10 @@
 use std::sync::mpsc;
 
-use ui_lib::{UserApp, UserResult, UnitResult};
-use eyre::Result;
 use core_lib::User;
-use wasm_bindgen::JsCast;
+use eyre::Result;
 use serde::Serialize;
+use ui_lib::{EframeApp, ListUsersResult, NoResult};
+use wasm_bindgen::JsCast;
 
 #[derive(Serialize)]
 struct AddUserRequest {
@@ -18,7 +18,7 @@ async fn fetch_users() -> Result<Vec<User>> {
     Ok(users)
 }
 
-fn start_loading_users() -> mpsc::Receiver<UserResult> {
+fn start_loading_users() -> mpsc::Receiver<ListUsersResult> {
     let (sender, receiver) = mpsc::channel();
 
     wasm_bindgen_futures::spawn_local(async move {
@@ -40,7 +40,7 @@ async fn add_user(name: String) -> Result<()> {
     Ok(())
 }
 
-fn start_adding_user(name: String) -> mpsc::Receiver<UnitResult> {
+fn start_adding_user(name: String) -> mpsc::Receiver<NoResult> {
     let (sender, receiver) = mpsc::channel();
 
     wasm_bindgen_futures::spawn_local(async move {
@@ -51,7 +51,6 @@ fn start_adding_user(name: String) -> mpsc::Receiver<UnitResult> {
     receiver
 }
 
-#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
 pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
     console_error_panic_hook::set_once();
@@ -66,7 +65,12 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
         .start(
             canvas,
             eframe::WebOptions::default(),
-            Box::new(|_cc| Ok(Box::new(UserApp::new(start_loading_users, start_adding_user)))),
+            Box::new(|_cc| {
+                Ok(Box::new(EframeApp::new(
+                    start_loading_users,
+                    start_adding_user,
+                )))
+            }),
         )
         .await
 }

@@ -1,113 +1,113 @@
 use std::sync::mpsc::Receiver;
 
+use core_lib::User;
 use eframe::egui;
 use eyre::Result;
-use core_lib::User;
 
-pub type UserResult = Result<Vec<User>>;
-pub type UnitResult = Result<()>;
+pub type ListUsersResult = Result<Vec<User>>;
+pub type NoResult = Result<()>;
 
 #[derive(Default)]
-pub struct UserApp {
-    users: Vec<User>,
+pub struct EframeApp {
     error: Option<String>,
     loading: bool,
-    receiver: Option<Receiver<UserResult>>,
-    start_loading_users: Option<Box<dyn Fn() -> Receiver<UserResult>>>,
-    
-    new_user_name: String,
-    add_receiver: Option<Receiver<UnitResult>>,
-    start_adding_user: Option<Box<dyn Fn(String) -> Receiver<UnitResult>>>,
+
+    listed_users: Vec<User>,
+    list_user_recvr: Option<Receiver<ListUsersResult>>,
+    snd_req_list_users: Option<Box<dyn Fn() -> Receiver<ListUsersResult>>>,
+
+    add_user_name: String,
+    add_user_recvr: Option<Receiver<NoResult>>,
+    snd_req_add_user: Option<Box<dyn Fn(String) -> Receiver<NoResult>>>,
 }
 
-impl UserApp {
+impl EframeApp {
     pub fn new(
-        start_loading_users: impl Fn() -> Receiver<UserResult> + 'static,
-        start_adding_user: impl Fn(String) -> Receiver<UnitResult> + 'static,
+        snd_req_list_users: impl Fn() -> Receiver<ListUsersResult> + 'static,
+        snd_req_add_user: impl Fn(String) -> Receiver<NoResult> + 'static,
     ) -> Self {
         Self {
-            start_loading_users: Some(Box::new(start_loading_users)),
-            start_adding_user: Some(Box::new(start_adding_user)),
+            snd_req_list_users: Some(Box::new(snd_req_list_users)),
+            snd_req_add_user: Some(Box::new(snd_req_add_user)),
             ..Default::default()
         }
     }
 
-    fn poll_receiver(&mut self) {
-        if let Some(receiver) = &self.receiver {
-            if let Ok(result) = receiver.try_recv() {
-                self.loading = false;
+    fn poll_list_user_recvr(&mut self) {
+        if let Some(receiver) = &self.list_user_recvr
+            && let Ok(result) = receiver.try_recv()
+        {
+            self.loading = false;
 
-                match result {
-                    Ok(users) => {
-                        self.users = users;
-                        self.error = None;
-                    }
-                    Err(error) => {
-                        self.error = Some(error.to_string());
-                    }
+            match result {
+                Ok(users) => {
+                    self.listed_users = users;
+                    self.error = None;
                 }
-
-                self.receiver = None;
-            }
-        }
-    }
-
-    fn poll_add_receiver(&mut self) {
-        if let Some(receiver) = &self.add_receiver {
-            if let Ok(result) = receiver.try_recv() {
-                if let Err(error) = result {
+                Err(error) => {
                     self.error = Some(error.to_string());
                 }
-
-                self.add_receiver = None;
             }
+
+            self.list_user_recvr = None;
         }
     }
 
-    fn start_loading(&mut self) {
-        if let Some(start_loading_users) = &self.start_loading_users {
+    fn poll_add_user_recvr(&mut self) {
+        if let Some(receiver) = &self.add_user_recvr
+            && let Ok(result) = receiver.try_recv()
+        {
+            self.loading = false;
+            if let Err(error) = result {
+                self.error = Some(error.to_string());
+            }
+
+            self.add_user_recvr = None;
+        }
+    }
+
+    fn start_list_users(&mut self) {
+        if let Some(snd_req_list_users) = &self.snd_req_list_users {
             self.loading = true;
             self.error = None;
-            self.receiver = Some(start_loading_users());
+            self.list_user_recvr = Some(snd_req_list_users());
+        }
+    }
+
+    fn start_add_user(&mut self) {
+        let name = self.add_user_name.trim().to_owned();
+        if !name.is_empty()
+            && let Some(snd_req_add_user) = &self.snd_req_add_user
+        {
+            self.loading = true;
+            self.add_user_recvr = Some(snd_req_add_user(name));
+            self.add_user_name.clear();
         }
     }
 }
 
-impl eframe::App for UserApp {
+impl eframe::App for EframeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.poll_receiver();
-        self.poll_add_receiver();
+        self.poll_list_user_recvr();
+        self.poll_add_user_recvr();
 
         ui.horizontal(|ui| {
-            ui.text_edit_singleline(&mut self.new_user_name);
-
+            ui.text_edit_singleline(&mut self.add_user_name);
             if ui.button("Add user").clicked() {
-                let name = self.new_user_name.trim().to_owned();
-
-                if !name.is_empty() {
-                    if let Some(start_adding_user) = &self.start_adding_user {
-                        self.add_receiver = Some(start_adding_user(name));
-                        self.new_user_name.clear();
-                    }
-                }
+                self.start_add_user();
             }
         });
-
         if ui.button("List users").clicked() {
-            self.start_loading();
+            self.start_list_users();
         }
-
         if self.loading {
             ui.label("Loading...");
         }
-
         if let Some(error) = &self.error {
             ui.colored_label(egui::Color32::RED, error);
         }
-
         ui.separator();
-
-        for user in &self.users {
+        for user in &self.listed_users {
             ui.label(&user.name);
         }
     }
