@@ -101,12 +101,10 @@ async fn add_user(name: String) -> Result<()> {
 
 fn start_add_user(name: String) -> mpsc::Receiver<NoResult> {
     let (sender, receiver) = mpsc::channel();
-
     wasm_bindgen_futures::spawn_local(async move {
         let result = add_user(name).await;
         let _ = sender.send(result);
     });
-
     receiver
 }
 

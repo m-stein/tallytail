@@ -1,10 +1,11 @@
+mod error;
+
 use std::net::SocketAddr;
 
 use axum::{
     Json, Router,
     routing::{get, post},
 };
-use eyre::Result;
 use tower_http::cors::CorsLayer;
 
 use core_lib::{
@@ -12,8 +13,10 @@ use core_lib::{
     allocation_diagram_data::AllocationDiagramData, category::Category,
 };
 
+use crate::error::WebBackEndError;
+
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> eyre::Result<()> {
     let router = Router::new()
         .route("/users", get(get_users).post(add_user))
         .route("/get_latest_record", get(get_latest_record))
@@ -30,47 +33,25 @@ async fn main() -> Result<()> {
 
 async fn get_alloc_diagram_data(
     Json(args): Json<GetAllocDiagramDataArgs>,
-) -> Result<Json<AllocationDiagramData>, AppError> {
-    let data = infra_lib::get_alloc_diagram_data(args.catg_id, args.days)?;
-    Ok(Json(data))
+) -> eyre::Result<Json<AllocationDiagramData>, WebBackEndError> {
+    Ok(Json(infra_lib::get_alloc_diagram_data(
+        args.catg_id,
+        args.days,
+    )?))
 }
 
-async fn get_users() -> Result<Json<Vec<User>>, AppError> {
-    let users = infra_lib::list_users()?;
-    Ok(Json(users))
+async fn get_users() -> eyre::Result<Json<Vec<User>>, WebBackEndError> {
+    Ok(Json(infra_lib::list_users()?))
 }
 
-async fn get_categories() -> Result<Json<Vec<Category>>, AppError> {
+async fn get_categories() -> eyre::Result<Json<Vec<Category>>, WebBackEndError> {
     Ok(Json(infra_lib::get_categories()?))
 }
 
-async fn get_latest_record() -> Result<Json<Option<AllocationRecord>>, AppError> {
-    let res = infra_lib::get_latest_record()?;
-    Ok(Json(res))
+async fn get_latest_record() -> eyre::Result<Json<Option<AllocationRecord>>, WebBackEndError> {
+    Ok(Json(infra_lib::get_latest_record()?))
 }
 
-async fn add_user(Json(args): Json<AddUserArgs>) -> Result<(), AppError> {
-    infra_lib::add_user(args.name)?;
-    Ok(())
-}
-
-struct AppError(eyre::Report);
-
-impl<E> From<E> for AppError
-where
-    E: Into<eyre::Report>,
-{
-    fn from(error: E) -> Self {
-        Self(error.into())
-    }
-}
-
-impl axum::response::IntoResponse for AppError {
-    fn into_response(self) -> axum::response::Response {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Web back end error: {}", self.0),
-        )
-            .into_response()
-    }
+async fn add_user(Json(args): Json<AddUserArgs>) -> eyre::Result<Json<()>, WebBackEndError> {
+    Ok(Json(infra_lib::add_user(args.name)?))
 }
