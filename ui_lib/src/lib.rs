@@ -11,8 +11,8 @@ use eyre::Result;
 use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
 
 pub type ListUsersResult = Result<Vec<User>>;
-pub type ListCategoriesResult = Result<Vec<Category>>;
-pub type ListCategoriesRx = Receiver<ListCategoriesResult>;
+pub type GetCategoriesResult = Result<Vec<Category>>;
+pub type GetCategoriesRx = Receiver<GetCategoriesResult>;
 pub type NoResult = Result<()>;
 pub type GetLatestRecordRx = Receiver<Result<Option<AllocationRecord>>>;
 pub type GetAllocDiagramDataRx = Receiver<Result<AllocationDiagramData>>;
@@ -41,8 +41,8 @@ pub struct EframeApp {
     get_alloc_diagram_data_rx: Option<GetAllocDiagramDataRx>,
     start_get_alloc_diagram_data_fn: Option<Box<dyn Fn(i64, i64) -> GetAllocDiagramDataRx>>,
 
-    list_categories_rx: Option<ListCategoriesRx>,
-    start_list_categories_fn: Option<Box<dyn Fn() -> ListCategoriesRx>>,
+    get_categories_rx: Option<GetCategoriesRx>,
+    start_get_categories_fn: Option<Box<dyn Fn() -> GetCategoriesRx>>,
 }
 
 impl EframeApp {
@@ -53,18 +53,18 @@ impl EframeApp {
         start_get_alloc_diagram_data: impl Fn(i64, i64) -> GetAllocDiagramDataRx + 'static,
         start_get_latest_record: impl Fn() -> GetLatestRecordRx + 'static,
         start_list_users: impl Fn() -> Receiver<ListUsersResult> + 'static,
-        start_list_categories: impl Fn() -> Receiver<ListCategoriesResult> + 'static,
+        start_get_categories: impl Fn() -> Receiver<GetCategoriesResult> + 'static,
         start_add_user: impl Fn(String) -> Receiver<NoResult> + 'static,
     ) -> Self {
         let mut app = Self {
             start_list_users_fn: Some(Box::new(start_list_users)),
-            start_list_categories_fn: Some(Box::new(start_list_categories)),
+            start_get_categories_fn: Some(Box::new(start_get_categories)),
             start_add_user_fn: Some(Box::new(start_add_user)),
             start_get_latest_record_fn: Some(Box::new(start_get_latest_record)),
             start_get_alloc_diagram_data_fn: Some(Box::new(start_get_alloc_diagram_data)),
             ..Default::default()
         };
-        app.start_list_categories();
+        app.start_get_categories();
         app.start_get_latest_record();
         app
     }
@@ -99,8 +99,8 @@ impl EframeApp {
         }
     }
 
-    fn poll_list_categories_rx(&mut self) {
-        if let Some(rx) = &self.list_categories_rx
+    fn poll_get_categories_rx(&mut self) {
+        if let Some(rx) = &self.get_categories_rx
             && let Ok(result) = rx.try_recv()
         {
             match result {
@@ -112,7 +112,7 @@ impl EframeApp {
                     self.message = Some(error.to_string());
                 }
             }
-            self.list_categories_rx = None;
+            self.get_categories_rx = None;
             self.decr_pending_req_cnt();
         }
     }
@@ -175,10 +175,10 @@ impl EframeApp {
         }
     }
 
-    fn start_list_categories(&mut self) {
-        if let Some(start_fn) = &self.start_list_categories_fn {
+    fn start_get_categories(&mut self) {
+        if let Some(start_fn) = &self.start_get_categories_fn {
             self.message = None;
-            self.list_categories_rx = Some(start_fn());
+            self.get_categories_rx = Some(start_fn());
             self.incr_pending_req_cnt();
         }
     }
@@ -290,7 +290,7 @@ impl EframeApp {
 impl eframe::App for EframeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll_list_users_rx();
-        self.poll_list_categories_rx();
+        self.poll_get_categories_rx();
         self.poll_add_user_rx();
         self.poll_get_latest_record_rx();
         self.poll_get_alloc_diagram_data_rx();

@@ -7,7 +7,7 @@ use core_lib::{
 use eyre::Result;
 use serde::Serialize;
 use ui_lib::{
-    EframeApp, GetAllocDiagramDataRx, GetLatestRecordRx, ListCategoriesResult, ListUsersResult,
+    EframeApp, GetAllocDiagramDataRx, GetCategoriesResult, GetLatestRecordRx, ListUsersResult,
     NoResult,
 };
 use wasm_bindgen::JsCast;
@@ -19,16 +19,16 @@ struct AddUserRequest {
 
 const SERVER_URL: &str = "http://127.0.0.1:3000/users";
 const GET_LATEST_RECORD_URL: &str = "http://127.0.0.1:3000/get_latest_record";
-const LIST_CATEGORIES_URL: &str = "http://127.0.0.1:3000/list_categories";
+const GET_CATEGORIES_URL: &str = "http://127.0.0.1:3000/get_categories";
 const GET_ALLOC_DIAGRAM_DATA_URL: &str = "http://127.0.0.1:3000/get_alloc_diagram_data";
 
 async fn fetch_users() -> Result<Vec<User>> {
     Ok(reqwest::get(SERVER_URL).await?.json::<Vec<User>>().await?)
 }
 
-async fn list_categories() -> Result<Vec<Category>> {
+async fn get_categories() -> Result<Vec<Category>> {
     println!("1");
-    Ok(reqwest::get(LIST_CATEGORIES_URL)
+    Ok(reqwest::get(GET_CATEGORIES_URL)
         .await?
         .json::<Vec<Category>>()
         .await?)
@@ -61,10 +61,10 @@ fn start_list_users() -> mpsc::Receiver<ListUsersResult> {
     receiver
 }
 
-fn start_list_categories() -> mpsc::Receiver<ListCategoriesResult> {
+fn start_get_categories() -> mpsc::Receiver<GetCategoriesResult> {
     let (tx, rx) = mpsc::channel();
     wasm_bindgen_futures::spawn_local(async move {
-        let res = list_categories().await;
+        let res = get_categories().await;
         let _ = tx.send(res);
     });
     rx
@@ -129,7 +129,7 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
                     start_get_alloc_diagram_data,
                     start_get_latest_record,
                     start_list_users,
-                    start_list_categories,
+                    start_get_categories,
                     start_add_user,
                 )))
             }),

@@ -3,7 +3,7 @@ use std::{sync::mpsc, thread};
 use eyre::eyre;
 
 use ui_lib::{
-    EframeApp, GetAllocDiagramDataRx, GetLatestRecordRx, ListCategoriesResult, ListUsersResult,
+    EframeApp, GetAllocDiagramDataRx, GetCategoriesResult, GetLatestRecordRx, ListUsersResult,
     NoResult,
 };
 
@@ -16,7 +16,7 @@ fn main() -> eyre::Result<()> {
                 start_get_alloc_diagram_data,
                 start_get_latest_record,
                 start_list_users,
-                start_list_categories,
+                start_get_categories,
                 start_add_user,
             )))
         }),
@@ -43,10 +43,10 @@ fn start_list_users() -> mpsc::Receiver<ListUsersResult> {
     receiver
 }
 
-fn start_list_categories() -> mpsc::Receiver<ListCategoriesResult> {
+fn start_get_categories() -> mpsc::Receiver<GetCategoriesResult> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let result = infra_lib::list_categories();
+        let result = infra_lib::get_categories();
         let _ = tx.send(result);
     });
     rx

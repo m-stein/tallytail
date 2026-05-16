@@ -23,7 +23,7 @@ pub fn get_alloc_diagram_data(category_id: i64, days: i64) -> eyre::Result<Alloc
     Ok(AllocationDiagramData::new(records, &category_name))
 }
 
-pub fn list_categories() -> eyre::Result<Vec<Category>> {
+pub fn get_categories() -> eyre::Result<Vec<Category>> {
     let connection = rusqlite::Connection::open("../data/assets.sdb")?;
     Ok(connection
         .prepare(

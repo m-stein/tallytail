@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
         .route("/users", get(get_users).post(add_user))
         .route("/get_latest_record", get(get_latest_record))
         .route("/get_alloc_diagram_data", post(get_alloc_diagram_data))
-        .route("/list_categories", get(list_categories))
+        .route("/get_categories", get(get_categories))
         .layer(CorsLayer::permissive());
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -40,8 +40,8 @@ async fn get_users() -> Result<Json<Vec<User>>, AppError> {
     Ok(Json(users))
 }
 
-async fn list_categories() -> Result<Json<Vec<Category>>, AppError> {
-    Ok(Json(infra_lib::list_categories()?))
+async fn get_categories() -> Result<Json<Vec<Category>>, AppError> {
+    Ok(Json(infra_lib::get_categories()?))
 }
 
 async fn get_latest_record() -> Result<Json<Option<AllocationRecord>>, AppError> {
