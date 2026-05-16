@@ -7,3 +7,5 @@ edition = "2024"
 core_lib = { path = "../core_lib" }
 eframe = "0.34"
 eyre = "0.6"
+egui = "0.34.1"
+egui_extras = { version = "0.34.1", features = ["datepicker"] }

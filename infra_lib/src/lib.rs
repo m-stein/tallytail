@@ -3,7 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use core_lib::{AllocationRecord, Data, User};
+use core_lib::{
+    AllocationRecord, Data, User, allocation_diagram_data::AllocationDiagramData,
+    category::Category,
+};
 use eyre::eyre;
 
 const DATA_PATH: &str = "../data/data.ron";
@@ -12,6 +15,33 @@ pub fn list_users() -> eyre::Result<Vec<User>> {
     let text = fs::read_to_string(DATA_PATH)?;
     let data: Data = ron::from_str(&text)?;
     Ok(data.users)
+}
+
+pub fn get_alloc_diagram_data(category_id: i64, days: i64) -> eyre::Result<AllocationDiagramData> {
+    let records = get_latest_records(days as usize)?;
+    let category_name = get_category_name_by_id(category_id)?;
+    Ok(AllocationDiagramData::new(records, &category_name))
+}
+
+pub fn list_categories() -> eyre::Result<Vec<Category>> {
+    let connection = rusqlite::Connection::open("../data/assets.sdb")?;
+    Ok(connection
+        .prepare(
+            "
+            SELECT id, name
+            FROM asset_categories
+            ORDER BY name ASC",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map([], |row| {
+                Ok(Category {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    values: Vec::new(),
+                })
+            })?
+            .collect()
+        })?)
 }
 
 pub fn add_user(name: String) -> eyre::Result<()> {
@@ -60,4 +90,13 @@ fn get_latest_records(limit: usize) -> eyre::Result<Vec<AllocationRecord>> {
         .into_iter()
         .map(|path| Ok(ron::from_str(&fs::read_to_string(path)?)?))
         .collect()
+}
+
+fn get_category_name_by_id(category_id: i64) -> eyre::Result<String> {
+    let connection = rusqlite::Connection::open("../data/assets.sdb")?;
+    Ok(connection.query_row(
+        "SELECT name FROM asset_categories WHERE id = ?1",
+        rusqlite::params![category_id],
+        |row| row.get(0),
+    )?)
 }

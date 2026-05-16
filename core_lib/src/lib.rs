@@ -1,3 +1,7 @@
+pub mod allocation_diagram_data;
+pub mod category;
+pub mod category_value;
+
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter, EnumString};
 
@@ -55,4 +59,15 @@ pub struct AllocationPosition {
 pub struct AllocationRecord {
     pub date: String,
     pub positions: Vec<AllocationPosition>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct GetAllocDiagramDataArgs {
+    pub catg_id: i64,
+    pub days: i64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AddUserArgs {
+    pub name: String,
 }

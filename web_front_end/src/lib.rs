@@ -1,9 +1,15 @@
 use std::sync::mpsc;
 
-use core_lib::{AllocationRecord, User};
+use core_lib::{
+    AllocationRecord, GetAllocDiagramDataArgs, User,
+    allocation_diagram_data::AllocationDiagramData, category::Category,
+};
 use eyre::Result;
 use serde::Serialize;
-use ui_lib::{EframeApp, GetLatestRecordRx, ListUsersResult, NoResult};
+use ui_lib::{
+    EframeApp, GetAllocDiagramDataRx, GetLatestRecordRx, ListCategoriesResult, ListUsersResult,
+    NoResult,
+};
 use wasm_bindgen::JsCast;
 
 #[derive(Serialize)]
@@ -13,9 +19,19 @@ struct AddUserRequest {
 
 const SERVER_URL: &str = "http://127.0.0.1:3000/users";
 const GET_LATEST_RECORD_URL: &str = "http://127.0.0.1:3000/get_latest_record";
+const LIST_CATEGORIES_URL: &str = "http://127.0.0.1:3000/list_categories";
+const GET_ALLOC_DIAGRAM_DATA_URL: &str = "http://127.0.0.1:3000/get_alloc_diagram_data";
 
 async fn fetch_users() -> Result<Vec<User>> {
     Ok(reqwest::get(SERVER_URL).await?.json::<Vec<User>>().await?)
+}
+
+async fn list_categories() -> Result<Vec<Category>> {
+    println!("1");
+    Ok(reqwest::get(LIST_CATEGORIES_URL)
+        .await?
+        .json::<Vec<Category>>()
+        .await?)
 }
 
 async fn get_latest_record() -> Result<Option<AllocationRecord>> {
@@ -23,6 +39,17 @@ async fn get_latest_record() -> Result<Option<AllocationRecord>> {
         .await?
         .json::<Option<AllocationRecord>>()
         .await?)
+}
+
+pub async fn get_alloc_diagram_data(catg_id: i64, days: i64) -> Result<AllocationDiagramData> {
+    let client = reqwest::Client::new();
+    let response = client
+        .post(GET_ALLOC_DIAGRAM_DATA_URL)
+        .json(&GetAllocDiagramDataArgs { catg_id, days })
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response.json::<AllocationDiagramData>().await?)
 }
 
 fn start_list_users() -> mpsc::Receiver<ListUsersResult> {
@@ -34,10 +61,28 @@ fn start_list_users() -> mpsc::Receiver<ListUsersResult> {
     receiver
 }
 
+fn start_list_categories() -> mpsc::Receiver<ListCategoriesResult> {
+    let (tx, rx) = mpsc::channel();
+    wasm_bindgen_futures::spawn_local(async move {
+        let res = list_categories().await;
+        let _ = tx.send(res);
+    });
+    rx
+}
+
 fn start_get_latest_record() -> GetLatestRecordRx {
     let (tx, rx) = mpsc::channel();
     wasm_bindgen_futures::spawn_local(async move {
         let result = get_latest_record().await;
+        let _ = tx.send(result);
+    });
+    rx
+}
+
+fn start_get_alloc_diagram_data(catg_id: i64, days: i64) -> GetAllocDiagramDataRx {
+    let (tx, rx) = mpsc::channel();
+    wasm_bindgen_futures::spawn_local(async move {
+        let result = get_alloc_diagram_data(catg_id, days).await;
         let _ = tx.send(result);
     });
     rx
@@ -81,8 +126,10 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
             eframe::WebOptions::default(),
             Box::new(|_cc| {
                 Ok(Box::new(EframeApp::new(
+                    start_get_alloc_diagram_data,
                     start_get_latest_record,
                     start_list_users,
+                    start_list_categories,
                     start_add_user,
                 )))
             }),

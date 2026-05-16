@@ -2,7 +2,10 @@ use std::{sync::mpsc, thread};
 
 use eyre::eyre;
 
-use ui_lib::{EframeApp, GetLatestRecordRx, ListUsersResult, NoResult};
+use ui_lib::{
+    EframeApp, GetAllocDiagramDataRx, GetLatestRecordRx, ListCategoriesResult, ListUsersResult,
+    NoResult,
+};
 
 fn main() -> eyre::Result<()> {
     eframe::run_native(
@@ -10,8 +13,10 @@ fn main() -> eyre::Result<()> {
         eframe::NativeOptions::default(),
         Box::new(|_cc| {
             Ok(Box::new(EframeApp::new(
+                start_get_alloc_diagram_data,
                 start_get_latest_record,
                 start_list_users,
+                start_list_categories,
                 start_add_user,
             )))
         }),
@@ -38,10 +43,28 @@ fn start_list_users() -> mpsc::Receiver<ListUsersResult> {
     receiver
 }
 
+fn start_list_categories() -> mpsc::Receiver<ListCategoriesResult> {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let result = infra_lib::list_categories();
+        let _ = tx.send(result);
+    });
+    rx
+}
+
 fn start_get_latest_record() -> GetLatestRecordRx {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let result = infra_lib::get_latest_record();
+        let _ = tx.send(result);
+    });
+    rx
+}
+
+fn start_get_alloc_diagram_data(category_id: i64, days: i64) -> GetAllocDiagramDataRx {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let result = infra_lib::get_alloc_diagram_data(category_id, days);
         let _ = tx.send(result);
     });
     rx
