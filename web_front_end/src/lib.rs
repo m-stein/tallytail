@@ -1,30 +1,16 @@
 use std::sync::mpsc;
 
 use core_lib::{
-    AllocationRecord, GetAllocDiagramDataArgs, User,
-    allocation_diagram_data::AllocationDiagramData, category::Category,
+    AllocationRecord, GetAllocDiagramDataArgs, allocation_diagram_data::AllocationDiagramData,
+    category::Category,
 };
 use eyre::Result;
-use serde::Serialize;
-use ui_lib::{
-    EframeApp, GetAllocDiagramDataRx, GetCategoriesResult, GetLatestRecordRx, ListUsersResult,
-    NoResult,
-};
+use ui_lib::{EframeApp, GetAllocDiagramDataRx, GetCategoriesResult, GetLatestRecordRx};
 use wasm_bindgen::JsCast;
 
-#[derive(Serialize)]
-struct AddUserRequest {
-    name: String,
-}
-
-const SERVER_URL: &str = "http://127.0.0.1:3000/users";
 const GET_LATEST_RECORD_URL: &str = "http://127.0.0.1:3000/get_latest_record";
 const GET_CATEGORIES_URL: &str = "http://127.0.0.1:3000/get_categories";
 const GET_ALLOC_DIAGRAM_DATA_URL: &str = "http://127.0.0.1:3000/get_alloc_diagram_data";
-
-async fn fetch_users() -> Result<Vec<User>> {
-    Ok(reqwest::get(SERVER_URL).await?.json::<Vec<User>>().await?)
-}
 
 async fn get_categories() -> Result<Vec<Category>> {
     println!("1");
@@ -50,15 +36,6 @@ pub async fn get_alloc_diagram_data(catg_id: i64, days: i64) -> Result<Allocatio
         .await?
         .error_for_status()?;
     Ok(response.json::<AllocationDiagramData>().await?)
-}
-
-fn start_list_users() -> mpsc::Receiver<ListUsersResult> {
-    let (sender, receiver) = mpsc::channel();
-    wasm_bindgen_futures::spawn_local(async move {
-        let result = fetch_users().await;
-        let _ = sender.send(result);
-    });
-    receiver
 }
 
 fn start_get_categories() -> mpsc::Receiver<GetCategoriesResult> {
@@ -88,26 +65,6 @@ fn start_get_alloc_diagram_data(catg_id: i64, days: i64) -> GetAllocDiagramDataR
     rx
 }
 
-async fn add_user(name: String) -> Result<()> {
-    reqwest::Client::new()
-        .post(SERVER_URL)
-        .json(&AddUserRequest { name })
-        .send()
-        .await?
-        .error_for_status()?;
-
-    Ok(())
-}
-
-fn start_add_user(name: String) -> mpsc::Receiver<NoResult> {
-    let (sender, receiver) = mpsc::channel();
-    wasm_bindgen_futures::spawn_local(async move {
-        let result = add_user(name).await;
-        let _ = sender.send(result);
-    });
-    receiver
-}
-
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
 pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
     console_error_panic_hook::set_once();
@@ -126,9 +83,7 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
                 Ok(Box::new(EframeApp::new(
                     start_get_alloc_diagram_data,
                     start_get_latest_record,
-                    start_list_users,
                     start_get_categories,
-                    start_add_user,
                 )))
             }),
         )

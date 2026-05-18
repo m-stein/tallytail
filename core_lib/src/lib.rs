@@ -5,16 +5,6 @@ pub mod category_value;
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter, EnumString};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct User {
-    pub name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Data {
-    pub users: Vec<User>,
-}
-
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, EnumIter, Serialize, Deserialize, EnumString, Display,
 )]
@@ -65,9 +55,4 @@ pub struct AllocationRecord {
 pub struct GetAllocDiagramDataArgs {
     pub catg_id: i64,
     pub days: i64,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct AddUserArgs {
-    pub name: String,
 }

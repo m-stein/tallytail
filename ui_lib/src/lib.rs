@@ -3,21 +3,28 @@ mod percent_stacked_bar_chart;
 use std::sync::mpsc::Receiver;
 
 use core_lib::{
-    AllocationRecord, User, allocation_diagram_data::AllocationDiagramData, category::Category,
+    AllocationRecord, allocation_diagram_data::AllocationDiagramData, category::Category,
 };
 use eframe::egui;
+use egui::TextWrapMode;
 use eyre::Result;
 
 use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
 
-pub type ListUsersResult = Result<Vec<User>>;
 pub type GetCategoriesResult = Result<Vec<Category>>;
 pub type GetCategoriesRx = Receiver<GetCategoriesResult>;
 pub type NoResult = Result<()>;
 pub type GetLatestRecordRx = Receiver<Result<Option<AllocationRecord>>>;
 pub type GetAllocDiagramDataRx = Receiver<Result<AllocationDiagramData>>;
 
-#[derive(Default)]
+#[derive(PartialEq)]
+enum Page {
+    AllocationDiagram,
+    AddAsset,
+    ConfigureCategories,
+    AddAllocationRecord,
+}
+
 pub struct EframeApp {
     message: Option<String>,
     pending_req_cnt: usize,
@@ -25,15 +32,7 @@ pub struct EframeApp {
     alloc_diagram_category_id: Option<i64>,
     alloc_diagram_data: Option<AllocationDiagramData>,
     latest_record: Option<AllocationRecord>,
-    listed_users: Vec<User>,
-    listed_categories: Vec<Category>,
-    new_user_name: String,
-
-    list_users_rx: Option<Receiver<ListUsersResult>>,
-    start_list_users_fn: Option<Box<dyn Fn() -> Receiver<ListUsersResult>>>,
-
-    add_user_rx: Option<Receiver<NoResult>>,
-    start_add_user_fn: Option<Box<dyn Fn(String) -> Receiver<NoResult>>>,
+    categories: Vec<Category>,
 
     get_latest_record_rx: Option<GetLatestRecordRx>,
     start_get_latest_record_fn: Option<Box<dyn Fn() -> GetLatestRecordRx>>,
@@ -43,26 +42,36 @@ pub struct EframeApp {
 
     get_categories_rx: Option<GetCategoriesRx>,
     start_get_categories_fn: Option<Box<dyn Fn() -> GetCategoriesRx>>,
+
+    page: Page,
 }
 
 impl EframeApp {
+    const MAX_CONTENT_WIDTH: f32 = 700.;
     const SPACE_2: f32 = 12.0;
+    const SPACE_3: f32 = 24.0;
+    const H1_SIZE: f32 = 32.0;
     const H2_SIZE: f32 = 24.0;
 
     pub fn new(
         start_get_alloc_diagram_data: impl Fn(i64, i64) -> GetAllocDiagramDataRx + 'static,
         start_get_latest_record: impl Fn() -> GetLatestRecordRx + 'static,
-        start_list_users: impl Fn() -> Receiver<ListUsersResult> + 'static,
         start_get_categories: impl Fn() -> Receiver<GetCategoriesResult> + 'static,
-        start_add_user: impl Fn(String) -> Receiver<NoResult> + 'static,
     ) -> Self {
         let mut app = Self {
-            start_list_users_fn: Some(Box::new(start_list_users)),
             start_get_categories_fn: Some(Box::new(start_get_categories)),
-            start_add_user_fn: Some(Box::new(start_add_user)),
             start_get_latest_record_fn: Some(Box::new(start_get_latest_record)),
             start_get_alloc_diagram_data_fn: Some(Box::new(start_get_alloc_diagram_data)),
-            ..Default::default()
+            page: Page::AllocationDiagram,
+            message: None,
+            alloc_diagram_category_id: None,
+            alloc_diagram_data: None,
+            categories: Vec::new(),
+            pending_req_cnt: 0,
+            latest_record: None,
+            get_alloc_diagram_data_rx: None,
+            get_categories_rx: None,
+            get_latest_record_rx: None,
         };
         app.start_get_categories();
         app.start_get_latest_record();
@@ -81,31 +90,13 @@ impl EframeApp {
         self.pending_req_cnt += 1;
     }
 
-    fn poll_list_users_rx(&mut self) {
-        if let Some(rx) = &self.list_users_rx
-            && let Ok(result) = rx.try_recv()
-        {
-            match result {
-                Ok(users) => {
-                    self.listed_users = users;
-                    self.message = None;
-                }
-                Err(error) => {
-                    self.message = Some(error.to_string());
-                }
-            }
-            self.list_users_rx = None;
-            self.decr_pending_req_cnt();
-        }
-    }
-
     fn poll_get_categories_rx(&mut self) {
         if let Some(rx) = &self.get_categories_rx
             && let Ok(result) = rx.try_recv()
         {
             match result {
                 Ok(categories) => {
-                    self.listed_categories = categories;
+                    self.categories = categories;
                     self.message = None;
                 }
                 Err(error) => {
@@ -155,41 +146,10 @@ impl EframeApp {
         }
     }
 
-    fn poll_add_user_rx(&mut self) {
-        if let Some(rx) = &self.add_user_rx
-            && let Ok(result) = rx.try_recv()
-        {
-            if let Err(error) = result {
-                self.message = Some(error.to_string());
-            }
-            self.add_user_rx = None;
-            self.decr_pending_req_cnt();
-        }
-    }
-
-    fn start_list_users(&mut self) {
-        if let Some(start_fn) = &self.start_list_users_fn {
-            self.message = None;
-            self.list_users_rx = Some(start_fn());
-            self.incr_pending_req_cnt();
-        }
-    }
-
     fn start_get_categories(&mut self) {
         if let Some(start_fn) = &self.start_get_categories_fn {
             self.message = None;
             self.get_categories_rx = Some(start_fn());
-            self.incr_pending_req_cnt();
-        }
-    }
-
-    fn start_add_user(&mut self) {
-        let name = self.new_user_name.trim().to_owned();
-        if !name.is_empty()
-            && let Some(start_fn) = &self.start_add_user_fn
-        {
-            self.add_user_rx = Some(start_fn(name));
-            self.new_user_name.clear();
             self.incr_pending_req_cnt();
         }
     }
@@ -217,7 +177,7 @@ impl EframeApp {
     fn allocation_diagram_category_selected_text(&self) -> &str {
         match self.alloc_diagram_category_id {
             Some(category_id) => self
-                .listed_categories
+                .categories
                 .iter()
                 .find(|category| category.id == category_id)
                 .map(|category| category.name.as_str())
@@ -238,7 +198,7 @@ impl EframeApp {
         egui::ComboBox::from_id_salt("allocation_diagram_category")
             .selected_text(self.allocation_diagram_category_selected_text())
             .show_ui(ui, |ui| {
-                for category in &self.listed_categories {
+                for category in &self.categories {
                     ui.selectable_value(
                         &mut self.alloc_diagram_category_id,
                         Some(category.id),
@@ -285,36 +245,125 @@ impl EframeApp {
             }
         }
     }
+
+    fn show_page_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        page: Page,
+        label: &str,
+        init_page_fn: fn(&mut Self) -> eyre::Result<()>,
+    ) {
+        let response = ui.add_sized(
+            [180.0, 20.0],
+            egui::Button::selectable(self.page == page, label),
+        );
+        if response.clicked() {
+            match init_page_fn(self) {
+                Ok(_) => {
+                    self.page = page;
+                }
+                Err(e) => {
+                    self.message = Some(e.to_string());
+                }
+            }
+        }
+    }
+
+    fn init_add_allocation_record_page(&mut self) -> eyre::Result<()> {
+        Ok(())
+    }
+
+    fn init_configure_categories_page(&mut self) -> eyre::Result<()> {
+        Ok(())
+    }
+
+    fn init_alocation_diagram_page(&mut self) -> eyre::Result<()> {
+        Ok(())
+    }
+
+    fn init_add_asset_page(&mut self) -> eyre::Result<()> {
+        Ok(())
+    }
+
+    fn show_add_asset_page(&mut self, _ui: &mut egui::Ui) {}
+
+    fn show_configure_categories_page(&mut self, _ui: &mut egui::Ui) {}
+
+    fn show_add_allocation_record_page(&mut self, _ui: &mut egui::Ui) {}
+
+    fn show_content(&mut self, ui: &mut egui::Ui) {
+        self.poll_get_categories_rx();
+        self.poll_get_latest_record_rx();
+        self.poll_get_alloc_diagram_data_rx();
+
+        ui.add_space(Self::SPACE_2);
+        ui.horizontal(|ui| {
+            // ui.image((self.squirrel_texture.id(), egui::vec2(68.0, 68.0)));
+            // ui.add_space(Self::SPACE_2);
+            ui.label(
+                egui::RichText::new("Asset Allocation Tracker")
+                    .heading()
+                    .size(Self::H1_SIZE),
+            );
+        });
+        ui.add_space(Self::SPACE_3);
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                self.show_page_button(
+                    ui,
+                    Page::AllocationDiagram,
+                    "Allocation Diagram",
+                    Self::init_alocation_diagram_page,
+                );
+                self.show_page_button(ui, Page::AddAsset, "Add Asset", Self::init_add_asset_page);
+                self.show_page_button(
+                    ui,
+                    Page::ConfigureCategories,
+                    "Configure Categories",
+                    Self::init_configure_categories_page,
+                );
+                self.show_page_button(
+                    ui,
+                    Page::AddAllocationRecord,
+                    "Add Allocation Record",
+                    Self::init_add_allocation_record_page,
+                );
+            });
+            ui.add_space(20.0);
+            ui.vertical(|ui| {
+                if self.pending_req_cnt > 0 {
+                    ui.label("Loading...");
+                } else {
+                    match self.page {
+                        Page::AddAsset => self.show_add_asset_page(ui),
+                        Page::AllocationDiagram => self.show_allocation_diagram_page(ui),
+                        Page::ConfigureCategories => self.show_configure_categories_page(ui),
+                        Page::AddAllocationRecord => self.show_add_allocation_record_page(ui),
+                    }
+                }
+                ui.add_space(20.0);
+                ui.label(egui::RichText::new("Message").heading().size(Self::H2_SIZE));
+                ui.add_space(Self::SPACE_2);
+                if let Some(message) = &self.message {
+                    ui.colored_label(egui::Color32::RED, message);
+                }
+            });
+        });
+    }
 }
 
 impl eframe::App for EframeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.poll_list_users_rx();
-        self.poll_get_categories_rx();
-        self.poll_add_user_rx();
-        self.poll_get_latest_record_rx();
-        self.poll_get_alloc_diagram_data_rx();
-
-        ui.horizontal(|ui| {
-            ui.text_edit_singleline(&mut self.new_user_name);
-            if ui.button("Add user").clicked() {
-                self.start_add_user();
-            }
+        ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
+        egui::CentralPanel::default().show_inside(ui, |ui| {
+            egui::ScrollArea::both()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.set_max_width(Self::MAX_CONTENT_WIDTH);
+                        self.show_content(ui);
+                    });
+                });
         });
-        if ui.button("List users").clicked() {
-            self.start_list_users();
-        }
-        if self.pending_req_cnt > 0 {
-            ui.label("Loading...");
-        } else {
-            if let Some(error) = &self.message {
-                ui.colored_label(egui::Color32::RED, error);
-            } else {
-                for user in &self.listed_users {
-                    ui.label(&user.name);
-                }
-                self.show_allocation_diagram_page(ui);
-            }
-        }
     }
 }
