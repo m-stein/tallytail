@@ -1,22 +1,46 @@
 use std::{sync::mpsc, thread};
 
-use eyre::eyre;
+use eframe::{
+    NativeOptions,
+    egui::{Context, TextureHandle},
+    run_native,
+};
 
-use ui_lib::{EframeApp, GetAllocDiagramDataRx, GetCategoriesResult, GetLatestRecordRx};
+use egui::ViewportBuilder;
+use ui_lib::{
+    AppBackend, EframeApp, GetAllocDiagramDataRx, GetCategoriesResult, GetLatestRecordRx,
+    png::load_png_texture_from_bytes,
+};
+
+pub struct DesktopBackend;
+
+impl AppBackend for DesktopBackend {
+    fn load_png_texture(&self, ctx: &Context, path: &str) -> eyre::Result<TextureHandle> {
+        let path = format!("../{path}");
+        load_png_texture_from_bytes(ctx, &path, &std::fs::read(&path)?)
+    }
+}
 
 fn main() -> eyre::Result<()> {
-    eframe::run_native(
+    let options = NativeOptions {
+        viewport: ViewportBuilder::default()
+            .with_maximized(true)
+            .with_title("Asset Allocation Tracker"),
+        ..Default::default()
+    };
+    run_native(
         "Asset Allocation Tracker",
-        eframe::NativeOptions::default(),
-        Box::new(|_cc| {
+        options,
+        Box::new(|cc| {
             Ok(Box::new(EframeApp::new(
+                cc,
+                DesktopBackend,
                 start_get_alloc_diagram_data,
                 start_get_latest_record,
                 start_get_categories,
-            )))
+            )?))
         }),
-    )
-    .map_err(|e| eyre!(e.to_string()))?;
+    )?;
     Ok(())
 }
 

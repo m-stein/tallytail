@@ -4,15 +4,19 @@ use core_lib::{
     AllocationRecord, GetAllocDiagramDataArgs, allocation_diagram_data::AllocationDiagramData,
     category::Category,
 };
-use eyre::Result;
-use ui_lib::{EframeApp, GetAllocDiagramDataRx, GetCategoriesResult, GetLatestRecordRx};
+use eframe::egui::{Context, TextureHandle};
+use eyre::eyre;
+use ui_lib::{
+    AppBackend, EframeApp, GetAllocDiagramDataRx, GetCategoriesResult, GetLatestRecordRx,
+    png::load_png_texture_from_bytes,
+};
 use wasm_bindgen::JsCast;
 
 const GET_LATEST_RECORD_URL: &str = "http://127.0.0.1:3000/get_latest_record";
 const GET_CATEGORIES_URL: &str = "http://127.0.0.1:3000/get_categories";
 const GET_ALLOC_DIAGRAM_DATA_URL: &str = "http://127.0.0.1:3000/get_alloc_diagram_data";
 
-async fn get_categories() -> Result<Vec<Category>> {
+async fn get_categories() -> eyre::Result<Vec<Category>> {
     println!("1");
     Ok(reqwest::get(GET_CATEGORIES_URL)
         .await?
@@ -20,14 +24,17 @@ async fn get_categories() -> Result<Vec<Category>> {
         .await?)
 }
 
-async fn get_latest_record() -> Result<Option<AllocationRecord>> {
+async fn get_latest_record() -> eyre::Result<Option<AllocationRecord>> {
     Ok(reqwest::get(GET_LATEST_RECORD_URL)
         .await?
         .json::<Option<AllocationRecord>>()
         .await?)
 }
 
-pub async fn get_alloc_diagram_data(catg_id: i64, days: i64) -> Result<AllocationDiagramData> {
+pub async fn get_alloc_diagram_data(
+    catg_id: i64,
+    days: i64,
+) -> eyre::Result<AllocationDiagramData> {
     let client = reqwest::Client::new();
     let response = client
         .post(GET_ALLOC_DIAGRAM_DATA_URL)
@@ -65,8 +72,22 @@ fn start_get_alloc_diagram_data(catg_id: i64, days: i64) -> GetAllocDiagramDataR
     rx
 }
 
+pub struct WebBackend;
+
+impl AppBackend for WebBackend {
+    fn load_png_texture(&self, ctx: &Context, path: &str) -> eyre::Result<TextureHandle> {
+        let bytes: &[u8] = match path {
+            "img/squirrel_68x68.png" => {
+                include_bytes!("../../img/squirrel_68x68.png")
+            }
+            _ => return Err(eyre!("unknown embedded asset path: {path}")),
+        };
+        load_png_texture_from_bytes(ctx, path, bytes)
+    }
+}
+
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
-pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
+pub async fn start() -> eyre::Result<(), wasm_bindgen::JsValue> {
     console_error_panic_hook::set_once();
 
     let canvas = web_sys::window()
@@ -79,12 +100,14 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
         .start(
             canvas,
             eframe::WebOptions::default(),
-            Box::new(|_cc| {
+            Box::new(|cc| {
                 Ok(Box::new(EframeApp::new(
+                    cc,
+                    WebBackend,
                     start_get_alloc_diagram_data,
                     start_get_latest_record,
                     start_get_categories,
-                )))
+                )?))
             }),
         )
         .await

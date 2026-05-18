@@ -1,4 +1,5 @@
 mod percent_stacked_bar_chart;
+pub mod png;
 
 use std::sync::mpsc::Receiver;
 
@@ -6,6 +7,7 @@ use core_lib::{
     AllocationRecord, allocation_diagram_data::AllocationDiagramData, category::Category,
 };
 use eframe::egui;
+use eframe::egui::{Context, TextureHandle};
 use egui::TextWrapMode;
 use eyre::Result;
 
@@ -25,7 +27,13 @@ enum Page {
     AddAllocationRecord,
 }
 
-pub struct EframeApp {
+pub trait AppBackend {
+    fn load_png_texture(&self, ctx: &Context, path: &str) -> eyre::Result<TextureHandle>;
+}
+
+#[allow(unused)]
+pub struct EframeApp<B: AppBackend> {
+    backend: B,
     message: Option<String>,
     pending_req_cnt: usize,
 
@@ -44,9 +52,11 @@ pub struct EframeApp {
     start_get_categories_fn: Option<Box<dyn Fn() -> GetCategoriesRx>>,
 
     page: Page,
+
+    squirrel_texture: egui::TextureHandle,
 }
 
-impl EframeApp {
+impl<B: AppBackend> EframeApp<B> {
     const MAX_CONTENT_WIDTH: f32 = 700.;
     const SPACE_2: f32 = 12.0;
     const SPACE_3: f32 = 24.0;
@@ -54,11 +64,17 @@ impl EframeApp {
     const H2_SIZE: f32 = 24.0;
 
     pub fn new(
+        creat_ctx: &eframe::CreationContext<'_>,
+        backend: B,
         start_get_alloc_diagram_data: impl Fn(i64, i64) -> GetAllocDiagramDataRx + 'static,
         start_get_latest_record: impl Fn() -> GetLatestRecordRx + 'static,
         start_get_categories: impl Fn() -> Receiver<GetCategoriesResult> + 'static,
-    ) -> Self {
+    ) -> eyre::Result<Self> {
+        let squirrel_texture =
+            backend.load_png_texture(&creat_ctx.egui_ctx, "img/squirrel_68x68.png")?;
         let mut app = Self {
+            backend,
+            squirrel_texture,
             start_get_categories_fn: Some(Box::new(start_get_categories)),
             start_get_latest_record_fn: Some(Box::new(start_get_latest_record)),
             start_get_alloc_diagram_data_fn: Some(Box::new(start_get_alloc_diagram_data)),
@@ -75,7 +91,7 @@ impl EframeApp {
         };
         app.start_get_categories();
         app.start_get_latest_record();
-        app
+        Ok(app)
     }
 
     fn decr_pending_req_cnt(&mut self) {
@@ -298,8 +314,8 @@ impl EframeApp {
 
         ui.add_space(Self::SPACE_2);
         ui.horizontal(|ui| {
-            // ui.image((self.squirrel_texture.id(), egui::vec2(68.0, 68.0)));
-            // ui.add_space(Self::SPACE_2);
+            ui.image((self.squirrel_texture.id(), egui::vec2(68.0, 68.0)));
+            ui.add_space(Self::SPACE_2);
             ui.label(
                 egui::RichText::new("Asset Allocation Tracker")
                     .heading()
@@ -352,7 +368,7 @@ impl EframeApp {
     }
 }
 
-impl eframe::App for EframeApp {
+impl<B: AppBackend> eframe::App for EframeApp<B> {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
         egui::CentralPanel::default().show_inside(ui, |ui| {

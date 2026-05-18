@@ -9,3 +9,4 @@ eframe = "0.34"
 eyre = "0.6"
 egui = "0.34.1"
 egui_extras = { version = "0.34.1", features = ["datepicker"] }
+png = "0.18.1"
