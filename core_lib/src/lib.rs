@@ -5,6 +5,8 @@ pub mod category_value;
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter, EnumString};
 
+pub const APP_NAME: &str = "Asset Allocation Tracker";
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, EnumIter, Serialize, Deserialize, EnumString, Display,
 )]
