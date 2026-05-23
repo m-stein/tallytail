@@ -5,6 +5,7 @@ use std::{
 
 use core_lib::{
     AllocationRecord, allocation_diagram_data::AllocationDiagramData, category::Category,
+    category_value::CategoryValue,
 };
 use eyre::eyre;
 
@@ -16,23 +17,50 @@ pub fn get_alloc_diagram_data(category_id: i64, days: i64) -> eyre::Result<Alloc
 
 pub fn get_categories() -> eyre::Result<Vec<Category>> {
     let connection = rusqlite::Connection::open("../data/assets.sdb")?;
-    Ok(connection
-        .prepare(
+
+    let mut stmt = connection.prepare(
+        "
+        SELECT id, name
+        FROM asset_categories
+        ORDER BY name ASC
+        ",
+    )?;
+
+    let category_rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+    })?;
+
+    let mut categories = Vec::new();
+
+    for category_row in category_rows {
+        let (category_id, category_name) = category_row?;
+
+        let mut value_stmt = connection.prepare(
             "
             SELECT id, name
-            FROM asset_categories
-            ORDER BY name ASC",
-        )
-        .and_then(|mut stmt| {
-            stmt.query_map([], |row| {
-                Ok(Category {
+            FROM asset_category_values
+            WHERE asset_category_id = ?
+            ORDER BY name ASC
+            ",
+        )?;
+
+        let values = value_stmt
+            .query_map([category_id], |row| {
+                Ok(CategoryValue {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    values: Vec::new(),
                 })
             })?
-            .collect()
-        })?)
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        categories.push(Category {
+            id: category_id,
+            name: category_name,
+            values,
+        });
+    }
+
+    Ok(categories)
 }
 
 pub fn get_latest_record() -> eyre::Result<Option<AllocationRecord>> {

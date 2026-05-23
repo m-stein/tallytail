@@ -1,17 +1,18 @@
 mod percent_stacked_bar_chart;
 pub mod png;
 
-use std::sync::mpsc::{self, Receiver};
-
+use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
+use crate::png::load_png_texture_from_bytes;
+use core_lib::AssetReferenceType;
+use core_lib::add_asset_input::{AddAssetInput, CategoryAssignmentInput};
 use core_lib::{
     AllocationRecord, allocation_diagram_data::AllocationDiagramData, category::Category,
 };
 use eframe::egui;
 use egui::TextWrapMode;
 use eyre::Result;
-
-use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
-use crate::png::load_png_texture_from_bytes;
+use std::sync::mpsc::{self, Receiver};
+use strum::IntoEnumIterator;
 
 pub type GetCategoriesResult = Result<Vec<Category>>;
 pub type GetCategoriesRx = Receiver<GetCategoriesResult>;
@@ -44,6 +45,7 @@ pub struct EframeApp<B: AppBackend> {
     alloc_diagram_data: Option<AllocationDiagramData>,
     latest_record: Option<AllocationRecord>,
     categories: Vec<Category>,
+    add_asset_input: AddAssetInput,
 
     get_latest_record_rx: Option<GetLatestRecordRx>,
     get_alloc_diagram_data_rx: Option<GetAllocDiagramDataRx>,
@@ -56,10 +58,13 @@ pub struct EframeApp<B: AppBackend> {
 
 impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     const MAX_CONTENT_WIDTH: f32 = 700.;
-    const SPACE_2: f32 = 12.0;
-    const SPACE_3: f32 = 24.0;
     const H1_SIZE: f32 = 32.0;
     const H2_SIZE: f32 = 24.0;
+    const SPACE_1: f32 = 8.0;
+    const SPACE_2: f32 = 12.0;
+    const SPACE_3: f32 = 24.0;
+    const DEFAULT_INPUT_HEIGHT: f32 = 19.0;
+    const SYM_BTN_SIZE: f32 = Self::DEFAULT_INPUT_HEIGHT;
 
     pub fn new(creat_ctx: &eframe::CreationContext<'_>, backend: BACKEND) -> eyre::Result<Self> {
         let squirrel_path = "img/squirrel_68x68.png";
@@ -78,6 +83,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             categories: Vec::new(),
             pending_req_cnt: 0,
             latest_record: None,
+            add_asset_input: AddAssetInput::default(),
             get_alloc_diagram_data_rx: None,
             get_categories_rx: None,
             get_latest_record_rx: None,
@@ -285,11 +291,122 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         Ok(())
     }
 
+    fn reset_add_asset_page(&mut self) {
+        self.add_asset_input = AddAssetInput::default();
+    }
+
     fn init_add_asset_page(&mut self) -> eyre::Result<()> {
+        self.reset_add_asset_page();
+        self.start_get_categories();
+        self.message = None;
         Ok(())
     }
 
-    fn show_add_asset_page(&mut self, _ui: &mut egui::Ui) {}
+    fn show_add_asset_page(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("Add Asset")
+                .heading()
+                .size(Self::H2_SIZE),
+        );
+        ui.add_space(Self::SPACE_2);
+
+        ui.label("Name:");
+        ui.text_edit_singleline(&mut self.add_asset_input.name);
+        ui.add_space(Self::SPACE_2);
+
+        ui.label("Reference type:");
+        egui::ComboBox::from_id_salt("reference_type")
+            .selected_text(self.add_asset_input.reference.r#type.to_string())
+            .show_ui(ui, |ui| {
+                for t in AssetReferenceType::iter() {
+                    ui.selectable_value(
+                        &mut self.add_asset_input.reference.r#type,
+                        t,
+                        t.to_string(),
+                    );
+                }
+            });
+        ui.add_space(Self::SPACE_2);
+
+        ui.label("Reference value:");
+        ui.text_edit_singleline(&mut self.add_asset_input.reference.value);
+        ui.vertical(|ui| {
+            for catgy in &mut self.categories {
+                let assignm_inputs = self
+                    .add_asset_input
+                    .catgy_id_to_assignm_inputs
+                    .entry(catgy.id)
+                    .or_default();
+
+                ui.add_space(Self::SPACE_2);
+                ui.horizontal(|ui| {
+                    if assignm_inputs.len() < catgy.values.len()
+                        && ui
+                            .add_sized(
+                                [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
+                                egui::Button::new("+"),
+                            )
+                            .clicked()
+                    {
+                        assignm_inputs.push(CategoryAssignmentInput {
+                            percentage: if assignm_inputs.is_empty() { 100. } else { 0. },
+                            value_id: None,
+                        });
+                    }
+                    ui.label(format!(" {}:", &catgy.name));
+                });
+                ui.add_space(Self::SPACE_1);
+
+                let mut del_input_idx: Option<usize> = None;
+                for input_idx in (0..assignm_inputs.len()).rev() {
+                    let assignm_input = &mut assignm_inputs[input_idx];
+                    let selected_text = assignm_input
+                        .value_id
+                        .and_then(|id| catgy.values.iter().find(|val| val.id == id))
+                        .map(|val| val.name.clone())
+                        .unwrap_or_else(|| "Select...".to_string());
+
+                    ui.horizontal(|ui| {
+                        ui.add_sized(
+                            [70.0, Self::DEFAULT_INPUT_HEIGHT],
+                            egui::DragValue::new(&mut assignm_input.percentage)
+                                .range(0.0..=100.0)
+                                .speed(0.1)
+                                .fixed_decimals(2)
+                                .suffix("%"),
+                        );
+                        egui::ComboBox::from_id_salt(format!("{}:{}", catgy.id, input_idx))
+                            .selected_text(selected_text)
+                            .show_ui(ui, |ui| {
+                                for value in catgy.values.iter() {
+                                    ui.selectable_value(
+                                        &mut assignm_input.value_id,
+                                        Some(value.id),
+                                        &value.name,
+                                    );
+                                }
+                            });
+                        if ui
+                            .add_sized(
+                                [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
+                                egui::Button::new("-"),
+                            )
+                            .clicked()
+                        {
+                            del_input_idx = Some(input_idx);
+                        }
+                    });
+                }
+                if let Some(idx) = del_input_idx {
+                    assignm_inputs.remove(idx);
+                }
+            }
+        });
+        ui.add_space(Self::SPACE_2);
+        if ui.button("Save").clicked() {
+            // self.save_new_asset()
+        }
+    }
 
     fn show_configure_categories_page(&mut self, _ui: &mut egui::Ui) {}
 

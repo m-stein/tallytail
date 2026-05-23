@@ -1,3 +1,4 @@
+pub mod add_asset_input;
 pub mod allocation_diagram_data;
 pub mod category;
 pub mod category_value;
@@ -11,7 +12,9 @@ pub const APP_NAME: &str = "Asset Allocation Tracker";
     Debug, Clone, Copy, PartialEq, Eq, EnumIter, Serialize, Deserialize, EnumString, Display,
 )]
 pub enum AssetReferenceType {
+    #[strum(serialize = "IBAN")]
     Iban,
+    #[strum(serialize = "ISIN")]
     Isin,
     Ticker,
 }
