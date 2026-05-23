@@ -31,7 +31,7 @@ async fn get_latest_record() -> eyre::Result<Option<AllocationRecord>> {
         .await?)
 }
 
-pub async fn get_alloc_diagram_data(
+async fn get_alloc_diagram_data(
     catg_id: i64,
     days: i64,
 ) -> eyre::Result<AllocationDiagramData> {
@@ -45,33 +45,6 @@ pub async fn get_alloc_diagram_data(
     Ok(response.json::<AllocationDiagramData>().await?)
 }
 
-fn start_get_categories() -> mpsc::Receiver<GetCategoriesResult> {
-    let (tx, rx) = mpsc::channel();
-    wasm_bindgen_futures::spawn_local(async move {
-        let res = get_categories().await;
-        let _ = tx.send(res);
-    });
-    rx
-}
-
-fn start_get_latest_record() -> GetLatestRecordRx {
-    let (tx, rx) = mpsc::channel();
-    wasm_bindgen_futures::spawn_local(async move {
-        let result = get_latest_record().await;
-        let _ = tx.send(result);
-    });
-    rx
-}
-
-fn start_get_alloc_diagram_data(catg_id: i64, days: i64) -> GetAllocDiagramDataRx {
-    let (tx, rx) = mpsc::channel();
-    wasm_bindgen_futures::spawn_local(async move {
-        let result = get_alloc_diagram_data(catg_id, days).await;
-        let _ = tx.send(result);
-    });
-    rx
-}
-
 pub struct WebBackend;
 
 impl AppBackend for WebBackend {
@@ -83,6 +56,33 @@ impl AppBackend for WebBackend {
             _ => return Err(eyre!("unknown embedded asset path: {path}")),
         };
         load_png_texture_from_bytes(ctx, path, bytes)
+    }
+
+    fn start_get_categories(&self) -> mpsc::Receiver<GetCategoriesResult> {
+        let (tx, rx) = mpsc::channel();
+        wasm_bindgen_futures::spawn_local(async move {
+            let res = get_categories().await;
+            let _ = tx.send(res);
+        });
+        rx
+    }
+
+    fn start_get_latest_record(&self) -> GetLatestRecordRx {
+        let (tx, rx) = mpsc::channel();
+        wasm_bindgen_futures::spawn_local(async move {
+            let result = get_latest_record().await;
+            let _ = tx.send(result);
+        });
+        rx
+    }
+
+    fn start_get_alloc_diagram_data(&self,catg_id: i64, days: i64) -> GetAllocDiagramDataRx {
+        let (tx, rx) = mpsc::channel();
+        wasm_bindgen_futures::spawn_local(async move {
+            let result = get_alloc_diagram_data(catg_id, days).await;
+            let _ = tx.send(result);
+        });
+        rx
     }
 }
 
@@ -101,13 +101,7 @@ pub async fn start() -> eyre::Result<(), wasm_bindgen::JsValue> {
             canvas,
             eframe::WebOptions::default(),
             Box::new(|cc| {
-                Ok(Box::new(EframeApp::new(
-                    cc,
-                    WebBackend,
-                    start_get_alloc_diagram_data,
-                    start_get_latest_record,
-                    start_get_categories,
-                )?))
+                Ok(Box::new(EframeApp::new(cc, WebBackend,)?))
             }),
         )
         .await

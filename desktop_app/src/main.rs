@@ -19,6 +19,33 @@ impl AppBackend for DesktopBackend {
         let path = format!("../{path}");
         load_png_texture_from_bytes(ctx, &path, &std::fs::read(&path)?)
     }
+
+    fn start_get_categories(&self) -> mpsc::Receiver<GetCategoriesResult> {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let result = infra_lib::get_categories();
+            let _ = tx.send(result);
+        });
+        rx
+    }
+
+    fn start_get_latest_record(&self) -> GetLatestRecordRx {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let result = infra_lib::get_latest_record();
+            let _ = tx.send(result);
+        });
+        rx
+    }
+
+    fn start_get_alloc_diagram_data(&self, category_id: i64, days: i64) -> GetAllocDiagramDataRx {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let result = infra_lib::get_alloc_diagram_data(category_id, days);
+            let _ = tx.send(result);
+        });
+        rx
+    }
 }
 
 fn main() -> eyre::Result<()> {
@@ -32,41 +59,8 @@ fn main() -> eyre::Result<()> {
         "Asset Allocation Tracker",
         options,
         Box::new(|cc| {
-            Ok(Box::new(EframeApp::new(
-                cc,
-                DesktopBackend,
-                start_get_alloc_diagram_data,
-                start_get_latest_record,
-                start_get_categories,
-            )?))
+            Ok(Box::new(EframeApp::new(cc, DesktopBackend)?))
         }),
     )?;
     Ok(())
-}
-
-fn start_get_categories() -> mpsc::Receiver<GetCategoriesResult> {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let result = infra_lib::get_categories();
-        let _ = tx.send(result);
-    });
-    rx
-}
-
-fn start_get_latest_record() -> GetLatestRecordRx {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let result = infra_lib::get_latest_record();
-        let _ = tx.send(result);
-    });
-    rx
-}
-
-fn start_get_alloc_diagram_data(category_id: i64, days: i64) -> GetAllocDiagramDataRx {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let result = infra_lib::get_alloc_diagram_data(category_id, days);
-        let _ = tx.send(result);
-    });
-    rx
 }

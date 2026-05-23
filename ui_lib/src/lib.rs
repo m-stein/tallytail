@@ -1,7 +1,7 @@
 mod percent_stacked_bar_chart;
 pub mod png;
 
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{self, Receiver};
 
 use core_lib::{
     AllocationRecord, allocation_diagram_data::AllocationDiagramData, category::Category,
@@ -29,6 +29,9 @@ enum Page {
 
 pub trait AppBackend {
     fn load_png_texture(&self, ctx: &Context, path: &str) -> eyre::Result<TextureHandle>;
+    fn start_get_categories(&self) -> mpsc::Receiver<GetCategoriesResult>;
+    fn start_get_latest_record(&self) -> GetLatestRecordRx;
+    fn start_get_alloc_diagram_data(&self, category_id: i64, days: i64) -> GetAllocDiagramDataRx;
 }
 
 #[allow(unused)]
@@ -43,20 +46,15 @@ pub struct EframeApp<B: AppBackend> {
     categories: Vec<Category>,
 
     get_latest_record_rx: Option<GetLatestRecordRx>,
-    start_get_latest_record_fn: Option<Box<dyn Fn() -> GetLatestRecordRx>>,
-
     get_alloc_diagram_data_rx: Option<GetAllocDiagramDataRx>,
-    start_get_alloc_diagram_data_fn: Option<Box<dyn Fn(i64, i64) -> GetAllocDiagramDataRx>>,
-
     get_categories_rx: Option<GetCategoriesRx>,
-    start_get_categories_fn: Option<Box<dyn Fn() -> GetCategoriesRx>>,
 
     page: Page,
 
     squirrel_texture: egui::TextureHandle,
 }
 
-impl<B: AppBackend> EframeApp<B> {
+impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     const MAX_CONTENT_WIDTH: f32 = 700.;
     const SPACE_2: f32 = 12.0;
     const SPACE_3: f32 = 24.0;
@@ -65,19 +63,13 @@ impl<B: AppBackend> EframeApp<B> {
 
     pub fn new(
         creat_ctx: &eframe::CreationContext<'_>,
-        backend: B,
-        start_get_alloc_diagram_data: impl Fn(i64, i64) -> GetAllocDiagramDataRx + 'static,
-        start_get_latest_record: impl Fn() -> GetLatestRecordRx + 'static,
-        start_get_categories: impl Fn() -> Receiver<GetCategoriesResult> + 'static,
+        backend: BACKEND,
     ) -> eyre::Result<Self> {
         let squirrel_texture =
             backend.load_png_texture(&creat_ctx.egui_ctx, "img/squirrel_68x68.png")?;
         let mut app = Self {
             backend,
             squirrel_texture,
-            start_get_categories_fn: Some(Box::new(start_get_categories)),
-            start_get_latest_record_fn: Some(Box::new(start_get_latest_record)),
-            start_get_alloc_diagram_data_fn: Some(Box::new(start_get_alloc_diagram_data)),
             page: Page::AllocationDiagram,
             message: None,
             alloc_diagram_category_id: None,
@@ -163,27 +155,21 @@ impl<B: AppBackend> EframeApp<B> {
     }
 
     fn start_get_categories(&mut self) {
-        if let Some(start_fn) = &self.start_get_categories_fn {
-            self.message = None;
-            self.get_categories_rx = Some(start_fn());
-            self.incr_pending_req_cnt();
-        }
+        self.message = None;
+        self.get_categories_rx = Some(self.backend.start_get_categories());
+        self.incr_pending_req_cnt();
     }
 
     fn start_get_latest_record(&mut self) {
-        if let Some(start_fn) = &self.start_get_latest_record_fn {
-            self.message = None;
-            self.get_latest_record_rx = Some(start_fn());
-            self.incr_pending_req_cnt();
-        }
+        self.message = None;
+        self.get_latest_record_rx = Some(self.backend.start_get_latest_record());
+        self.incr_pending_req_cnt();
     }
 
     fn start_get_alloc_diagram_data(&mut self) {
-        if let Some(category_id) = self.alloc_diagram_category_id
-            && let Some(start_fn) = &self.start_get_alloc_diagram_data_fn
-        {
+        if let Some(category_id) = self.alloc_diagram_category_id {
             self.message = None;
-            self.get_alloc_diagram_data_rx = Some(start_fn(category_id, 5));
+            self.get_alloc_diagram_data_rx = Some(self.backend.start_get_alloc_diagram_data(category_id, 5));
             self.incr_pending_req_cnt();
         } else {
             self.alloc_diagram_data = None;
