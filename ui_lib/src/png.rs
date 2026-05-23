@@ -4,7 +4,7 @@ use std::io::Cursor;
 pub fn load_png_texture_from_bytes(
     ctx: &egui::Context,
     name: &str,
-    bytes: &[u8],
+    bytes: Vec<u8>,
 ) -> eyre::Result<egui::TextureHandle> {
     let decoder = png::Decoder::new(Cursor::new(bytes));
     let mut reader = decoder.read_info()?;

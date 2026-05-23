@@ -4,11 +4,9 @@ use core_lib::{
     AllocationRecord, GetAllocDiagramDataArgs, allocation_diagram_data::AllocationDiagramData,
     category::Category,
 };
-use eframe::egui::{Context, TextureHandle};
 use eyre::eyre;
 use ui_lib::{
     AppBackend, EframeApp, GetAllocDiagramDataRx, GetCategoriesResult, GetLatestRecordRx,
-    png::load_png_texture_from_bytes,
 };
 use wasm_bindgen::JsCast;
 
@@ -31,10 +29,7 @@ async fn get_latest_record() -> eyre::Result<Option<AllocationRecord>> {
         .await?)
 }
 
-async fn get_alloc_diagram_data(
-    catg_id: i64,
-    days: i64,
-) -> eyre::Result<AllocationDiagramData> {
+async fn get_alloc_diagram_data(catg_id: i64, days: i64) -> eyre::Result<AllocationDiagramData> {
     let client = reqwest::Client::new();
     let response = client
         .post(GET_ALLOC_DIAGRAM_DATA_URL)
@@ -48,14 +43,14 @@ async fn get_alloc_diagram_data(
 pub struct WebBackend;
 
 impl AppBackend for WebBackend {
-    fn load_png_texture(&self, ctx: &Context, path: &str) -> eyre::Result<TextureHandle> {
+    fn load_png_file(&self, path: &str) -> eyre::Result<Vec<u8>> {
         let bytes: &[u8] = match path {
             "img/squirrel_68x68.png" => {
                 include_bytes!("../../img/squirrel_68x68.png")
             }
             _ => return Err(eyre!("unknown embedded asset path: {path}")),
         };
-        load_png_texture_from_bytes(ctx, path, bytes)
+        Ok(bytes.into())
     }
 
     fn start_get_categories(&self) -> mpsc::Receiver<GetCategoriesResult> {
@@ -76,7 +71,7 @@ impl AppBackend for WebBackend {
         rx
     }
 
-    fn start_get_alloc_diagram_data(&self,catg_id: i64, days: i64) -> GetAllocDiagramDataRx {
+    fn start_get_alloc_diagram_data(&self, catg_id: i64, days: i64) -> GetAllocDiagramDataRx {
         let (tx, rx) = mpsc::channel();
         wasm_bindgen_futures::spawn_local(async move {
             let result = get_alloc_diagram_data(catg_id, days).await;
@@ -100,9 +95,7 @@ pub async fn start() -> eyre::Result<(), wasm_bindgen::JsValue> {
         .start(
             canvas,
             eframe::WebOptions::default(),
-            Box::new(|cc| {
-                Ok(Box::new(EframeApp::new(cc, WebBackend,)?))
-            }),
+            Box::new(|cc| Ok(Box::new(EframeApp::new(cc, WebBackend)?))),
         )
         .await
 }

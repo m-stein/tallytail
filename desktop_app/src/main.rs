@@ -1,23 +1,17 @@
 use std::{sync::mpsc, thread};
 
-use eframe::{
-    NativeOptions,
-    egui::{Context, TextureHandle},
-    run_native,
-};
+use eframe::{NativeOptions, run_native};
 
 use egui::ViewportBuilder;
 use ui_lib::{
     AppBackend, EframeApp, GetAllocDiagramDataRx, GetCategoriesResult, GetLatestRecordRx,
-    png::load_png_texture_from_bytes,
 };
 
 pub struct DesktopBackend;
 
 impl AppBackend for DesktopBackend {
-    fn load_png_texture(&self, ctx: &Context, path: &str) -> eyre::Result<TextureHandle> {
-        let path = format!("../{path}");
-        load_png_texture_from_bytes(ctx, &path, &std::fs::read(&path)?)
+    fn load_png_file(&self, path: &str) -> eyre::Result<Vec<u8>> {
+        Ok(std::fs::read(format!("../{path}"))?)
     }
 
     fn start_get_categories(&self) -> mpsc::Receiver<GetCategoriesResult> {
@@ -58,9 +52,7 @@ fn main() -> eyre::Result<()> {
     run_native(
         "Asset Allocation Tracker",
         options,
-        Box::new(|cc| {
-            Ok(Box::new(EframeApp::new(cc, DesktopBackend)?))
-        }),
+        Box::new(|cc| Ok(Box::new(EframeApp::new(cc, DesktopBackend)?))),
     )?;
     Ok(())
 }

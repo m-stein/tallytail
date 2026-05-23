@@ -7,11 +7,11 @@ use core_lib::{
     AllocationRecord, allocation_diagram_data::AllocationDiagramData, category::Category,
 };
 use eframe::egui;
-use eframe::egui::{Context, TextureHandle};
 use egui::TextWrapMode;
 use eyre::Result;
 
 use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
+use crate::png::load_png_texture_from_bytes;
 
 pub type GetCategoriesResult = Result<Vec<Category>>;
 pub type GetCategoriesRx = Receiver<GetCategoriesResult>;
@@ -28,7 +28,7 @@ enum Page {
 }
 
 pub trait AppBackend {
-    fn load_png_texture(&self, ctx: &Context, path: &str) -> eyre::Result<TextureHandle>;
+    fn load_png_file(&self, path: &str) -> eyre::Result<Vec<u8>>;
     fn start_get_categories(&self) -> mpsc::Receiver<GetCategoriesResult>;
     fn start_get_latest_record(&self) -> GetLatestRecordRx;
     fn start_get_alloc_diagram_data(&self, category_id: i64, days: i64) -> GetAllocDiagramDataRx;
@@ -61,12 +61,13 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     const H1_SIZE: f32 = 32.0;
     const H2_SIZE: f32 = 24.0;
 
-    pub fn new(
-        creat_ctx: &eframe::CreationContext<'_>,
-        backend: BACKEND,
-    ) -> eyre::Result<Self> {
-        let squirrel_texture =
-            backend.load_png_texture(&creat_ctx.egui_ctx, "img/squirrel_68x68.png")?;
+    pub fn new(creat_ctx: &eframe::CreationContext<'_>, backend: BACKEND) -> eyre::Result<Self> {
+        let squirrel_path = "img/squirrel_68x68.png";
+        let squirrel_texture = load_png_texture_from_bytes(
+            &creat_ctx.egui_ctx,
+            squirrel_path,
+            backend.load_png_file(squirrel_path)?,
+        )?;
         let mut app = Self {
             backend,
             squirrel_texture,
@@ -169,7 +170,8 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     fn start_get_alloc_diagram_data(&mut self) {
         if let Some(category_id) = self.alloc_diagram_category_id {
             self.message = None;
-            self.get_alloc_diagram_data_rx = Some(self.backend.start_get_alloc_diagram_data(category_id, 5));
+            self.get_alloc_diagram_data_rx =
+                Some(self.backend.start_get_alloc_diagram_data(category_id, 5));
             self.incr_pending_req_cnt();
         } else {
             self.alloc_diagram_data = None;
