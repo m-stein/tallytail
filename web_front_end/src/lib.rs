@@ -1,7 +1,7 @@
 mod web_backend;
 
 use crate::web_backend::WebBackend;
-use ui_lib::EframeApp;
+use ui_lib::eframe_app::EframeApp;
 use wasm_bindgen::JsCast;
 
 #[wasm_bindgen::prelude::wasm_bindgen(start)]

@@ -5,7 +5,7 @@ use core_lib::{
     AllocationRecord, GetAllocDiagramDataArgs, allocation_diagram_data::AllocationDiagramData,
     category::Category,
 };
-use ui_lib::{AppBackend, GetAllocDiagramDataRx, GetCategoriesResult, GetLatestRecordRx};
+use ui_lib::app_backend::{AppBackend, GetAllocDiagramDataRx, GetCategoriesRx, GetLatestRecordRx};
 
 pub struct WebBackend;
 
@@ -56,7 +56,7 @@ impl AppBackend for WebBackend {
         Ok(bytes.into())
     }
 
-    fn start_get_categories(&self) -> mpsc::Receiver<GetCategoriesResult> {
+    fn start_get_categories(&self) -> GetCategoriesRx {
         let (tx, rx) = mpsc::channel();
         wasm_bindgen_futures::spawn_local(async move {
             let res = Self::get_categories().await;

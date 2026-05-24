@@ -1,6 +1,6 @@
 use std::{sync::mpsc, thread};
 
-use ui_lib::{AppBackend, GetAllocDiagramDataRx, GetCategoriesResult, GetLatestRecordRx};
+use ui_lib::app_backend::{AppBackend, GetAllocDiagramDataRx, GetCategoriesRx, GetLatestRecordRx};
 
 pub struct DesktopBackend;
 
@@ -9,7 +9,7 @@ impl AppBackend for DesktopBackend {
         Ok(std::fs::read(format!("../{path}"))?)
     }
 
-    fn start_get_categories(&self) -> mpsc::Receiver<GetCategoriesResult> {
+    fn start_get_categories(&self) -> GetCategoriesRx {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let result = infra_lib::get_categories();
