@@ -1,4 +1,6 @@
-use crate::app_backend::{AppBackend, GetAllocDiagramDataRx, GetCategoriesRx, GetLatestRecordRx};
+use crate::app_backend::{
+    AddAssetRx, AppBackend, GetAllocDiagramDataRx, GetCategoriesRx, GetLatestRecordRx,
+};
 use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
 use crate::png::load_png_texture_from_bytes;
 use core_lib::AssetReferenceType;
@@ -33,6 +35,7 @@ pub struct EframeApp<B: AppBackend> {
     get_latest_record_rx: Option<GetLatestRecordRx>,
     get_alloc_diagram_data_rx: Option<GetAllocDiagramDataRx>,
     get_categories_rx: Option<GetCategoriesRx>,
+    add_asset_rx: Option<AddAssetRx>,
 
     page: Page,
 
@@ -70,6 +73,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             get_alloc_diagram_data_rx: None,
             get_categories_rx: None,
             get_latest_record_rx: None,
+            add_asset_rx: None,
         };
         app.start_get_categories();
         app.start_get_latest_record();
@@ -144,6 +148,18 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         }
     }
 
+    fn poll_add_asset_rx(&mut self) {
+        if let Some(rx) = &self.add_asset_rx
+            && let Ok(result) = rx.try_recv()
+        {
+            if let Err(error) = result {
+                self.message = Some(error.to_string());
+            }
+            self.add_asset_rx = None;
+            self.decr_pending_req_cnt();
+        }
+    }
+
     fn start_get_categories(&mut self) {
         self.message = None;
         self.get_categories_rx = Some(self.backend.start_get_categories());
@@ -165,6 +181,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         } else {
             self.alloc_diagram_data = None;
         }
+    }
+
+    fn start_add_asset(&mut self) {
+        self.add_asset_rx = Some(self.backend.start_add_asset(&self.add_asset_input));
+        self.reset_add_asset_page();
+        self.incr_pending_req_cnt();
     }
 
     fn allocation_diagram_category_selected_text(&self) -> &str {
@@ -387,7 +409,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         });
         ui.add_space(Self::SPACE_2);
         if ui.button("Save").clicked() {
-            // self.save_new_asset()
+            self.start_add_asset();
         }
     }
 
@@ -399,6 +421,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         self.poll_get_categories_rx();
         self.poll_get_latest_record_rx();
         self.poll_get_alloc_diagram_data_rx();
+        self.poll_add_asset_rx();
 
         ui.add_space(Self::SPACE_2);
         ui.horizontal(|ui| {

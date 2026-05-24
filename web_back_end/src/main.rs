@@ -1,19 +1,16 @@
 mod error;
 
-use std::net::SocketAddr;
-
+use crate::error::WebBackEndError;
 use axum::{
     Json, Router,
     routing::{get, post},
 };
-use tower_http::cors::CorsLayer;
-
 use core_lib::{
-    AllocationRecord, GetAllocDiagramDataArgs, allocation_diagram_data::AllocationDiagramData,
-    category::Category,
+    AllocationRecord, GetAllocDiagramDataArgs, add_asset_input::AddAssetInput,
+    allocation_diagram_data::AllocationDiagramData, category::Category,
 };
-
-use crate::error::WebBackEndError;
+use std::net::SocketAddr;
+use tower_http::cors::CorsLayer;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -21,6 +18,7 @@ async fn main() -> eyre::Result<()> {
         .route("/get_latest_record", get(get_latest_record))
         .route("/get_alloc_diagram_data", post(get_alloc_diagram_data))
         .route("/get_categories", get(get_categories))
+        .route("/add_asset", post(add_asset))
         .layer(CorsLayer::permissive());
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -37,6 +35,10 @@ async fn get_alloc_diagram_data(
         args.catg_id,
         args.days,
     )?))
+}
+
+async fn add_asset(Json(input): Json<AddAssetInput>) -> eyre::Result<Json<()>, WebBackEndError> {
+    Ok(Json(infra_lib::add_asset(&input)?))
 }
 
 async fn get_categories() -> eyre::Result<Json<Vec<Category>>, WebBackEndError> {

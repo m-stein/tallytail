@@ -2,10 +2,12 @@ use eyre::eyre;
 use std::sync::mpsc;
 
 use core_lib::{
-    AllocationRecord, GetAllocDiagramDataArgs, allocation_diagram_data::AllocationDiagramData,
-    category::Category,
+    AllocationRecord, GetAllocDiagramDataArgs, add_asset_input::AddAssetInput,
+    allocation_diagram_data::AllocationDiagramData, category::Category,
 };
-use ui_lib::app_backend::{AppBackend, GetAllocDiagramDataRx, GetCategoriesRx, GetLatestRecordRx};
+use ui_lib::app_backend::{
+    AddAssetRx, AppBackend, GetAllocDiagramDataRx, GetCategoriesRx, GetLatestRecordRx,
+};
 
 pub struct WebBackend;
 
@@ -43,6 +45,16 @@ impl WebBackend {
             .json::<AllocationDiagramData>()
             .await?)
     }
+
+    async fn add_asset(input: &AddAssetInput) -> eyre::Result<()> {
+        reqwest::Client::new()
+            .post(Self::request_url("add_asset"))
+            .json(input)
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
 }
 
 impl AppBackend for WebBackend {
@@ -78,6 +90,16 @@ impl AppBackend for WebBackend {
         let (tx, rx) = mpsc::channel();
         wasm_bindgen_futures::spawn_local(async move {
             let result = Self::get_alloc_diagram_data(catg_id, days).await;
+            let _ = tx.send(result);
+        });
+        rx
+    }
+
+    fn start_add_asset(&self, input: &AddAssetInput) -> AddAssetRx {
+        let input = input.clone();
+        let (tx, rx) = mpsc::channel();
+        wasm_bindgen_futures::spawn_local(async move {
+            let result = Self::add_asset(&input).await;
             let _ = tx.send(result);
         });
         rx

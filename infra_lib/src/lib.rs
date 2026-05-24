@@ -1,18 +1,86 @@
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
-
 use core_lib::{
-    AllocationRecord, allocation_diagram_data::AllocationDiagramData, category::Category,
+    AllocationRecord, Asset, CategoryAssignment, add_asset_input::AddAssetInput,
+    allocation_diagram_data::AllocationDiagramData, category::Category,
     category_value::CategoryValue,
 };
 use eyre::eyre;
+use rusqlite::params;
 
 pub fn get_alloc_diagram_data(category_id: i64, days: i64) -> eyre::Result<AllocationDiagramData> {
     let records = get_latest_records(days as usize)?;
     let category_name = get_category_name_by_id(category_id)?;
     Ok(AllocationDiagramData::new(records, &category_name))
+}
+
+pub fn add_asset(input: &AddAssetInput) -> eyre::Result<()> {
+    let name = input.name.trim();
+    if name.is_empty() {
+        return Err(eyre!("Asset name must not be empty"));
+    }
+    if input.reference.value.is_empty() {
+        return Err(eyre!("Reference value must not be empty"));
+    }
+    let asset = Asset {
+        id: 0,
+        name: name.to_string(),
+        reference: input.reference.clone(),
+    };
+    let mut catgy_assignms: Vec<CategoryAssignment> = Vec::new();
+    for (_, assignm_inputs) in input.catgy_id_to_assignm_inputs.iter() {
+        let mut percentage = 0.;
+        let mut seen_value_ids = HashSet::new();
+        for assignm_input in assignm_inputs {
+            if assignm_input.percentage == 0. {
+                return Err(eyre!("Category value has percentage of 0%"));
+            }
+            if let Some(id) = assignm_input.value_id {
+                if !seen_value_ids.insert(id) {
+                    return Err(eyre!("Duplicate category values"));
+                }
+                percentage += assignm_input.percentage;
+                catgy_assignms.push(CategoryAssignment {
+                    value_id: id,
+                    ratio: assignm_input.percentage / 100.,
+                });
+            } else {
+                return Err(eyre!("Category value unset"));
+            }
+        }
+        if percentage > 100. {
+            return Err(eyre!("Percentages for a category add up to more than 100%"));
+        }
+    }
+    add_asset_raw(&asset, &catgy_assignms)
+}
+
+fn add_asset_raw(asset: &Asset, catgy_assignms: &[CategoryAssignment]) -> eyre::Result<()> {
+    let mut connection = rusqlite::Connection::open("../data/assets.sdb")?;
+    let tx = connection.transaction()?;
+    tx.execute(
+        "INSERT INTO assets (name, reference_type, reference_value) VALUES (?1, ?2, ?3)",
+        params![
+            asset.name,
+            asset.reference.r#type.to_string(),
+            asset.reference.value
+        ],
+    )?;
+    let asset_id = tx.last_insert_rowid();
+    for assignm in catgy_assignms.iter() {
+        tx.execute(
+            "
+            INSERT INTO asset_category_value_assignments
+            (asset_id, asset_category_value_id, ratio)
+            VALUES (?1, ?2, ?3)",
+            params![asset_id, assignm.value_id, assignm.ratio],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 pub fn get_categories() -> eyre::Result<Vec<Category>> {

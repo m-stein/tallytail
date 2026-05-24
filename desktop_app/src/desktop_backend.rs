@@ -1,6 +1,8 @@
 use std::{sync::mpsc, thread};
-
-use ui_lib::app_backend::{AppBackend, GetAllocDiagramDataRx, GetCategoriesRx, GetLatestRecordRx};
+use core_lib::add_asset_input::AddAssetInput;
+use ui_lib::app_backend::{
+    AddAssetRx, AppBackend, GetAllocDiagramDataRx, GetCategoriesRx, GetLatestRecordRx,
+};
 
 pub struct DesktopBackend;
 
@@ -31,6 +33,16 @@ impl AppBackend for DesktopBackend {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let result = infra_lib::get_alloc_diagram_data(category_id, days);
+            let _ = tx.send(result);
+        });
+        rx
+    }
+
+    fn start_add_asset(&self, input: &AddAssetInput) -> AddAssetRx {
+        let input = input.clone();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let result = infra_lib::add_asset(&input);
             let _ = tx.send(result);
         });
         rx

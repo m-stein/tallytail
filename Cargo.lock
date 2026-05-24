@@ -772,6 +772,7 @@ dependencies = [
 name = "core_lib"
 version = "0.1.0"
 dependencies = [
+ "eyre",
  "serde",
  "strum",
  "strum_macros",

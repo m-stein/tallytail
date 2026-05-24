@@ -1,13 +1,14 @@
+use crate::{AssetReference, AssetReferenceType};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::{AssetReference, AssetReferenceType};
-
-#[derive(Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct CategoryAssignmentInput {
     pub value_id: Option<i64>,
     pub percentage: f64,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AddAssetInput {
     pub name: String,
     pub reference: AssetReference,

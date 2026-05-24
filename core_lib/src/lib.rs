@@ -61,3 +61,16 @@ pub struct GetAllocDiagramDataArgs {
     pub catg_id: i64,
     pub days: i64,
 }
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct CategoryAssignment {
+    pub value_id: i64,
+    pub ratio: f64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Asset {
+    pub id: i64,
+    pub name: String,
+    pub reference: AssetReference,
+}
