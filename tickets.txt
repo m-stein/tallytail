@@ -1,0 +1,73 @@
+Last added: T28
+
+Open
+####
+
+T5: Allow for configuring one target allocation per category
+
+T7: The user input on each page should be reset on successful save only but not when leaving the page
+
+T11: The allocation diagram never shows more than 5 days into the past although more days are available
+
+T12: The allocation diagram should go from left to right from oldest to newest date
+
+T18: Simplify ConfigureCategoryInput by using one datastructure for both new and existing entities.
+     The distinction could be made by adding an Option<i64> for the entity ID which is None for
+     new ones
+
+T19: Discuss whether to store assets and categories in SQL or in RON and switch if RON is better
+
+T21: Discuss whether and how to approach the use case "Categories might be related one to another".
+     For instance, if an asset has value "Germany" for category "Country", it would automatically have
+     value "Europe" for a category "Region". Or if it has value "Banks" for category "Industry" it
+     automatically has value "Finance" for category "Sector"
+
+T22: A windows 11 user could not enter an umlaut in text input except it was the first character.
+     With my windows 10 machine it worked though
+
+T23: Discuss whether and how to approach the use case "Modify existing assets"
+
+T24: Discuss whether and how to approach the use case "Remove existing categories or category values"
+
+T26: Enable using the app remotely via web frontend
+
+T27: Move infra lib functions to a struct that keeps the SQL connection open
+
+T28: Move all core logic from infra lib to core lib (e.g. add_asset)
+
+
+Closed
+######
+
+T25: Add logo and vertically align content to center of the main window 
+
+T3: Support for having multiple differently weighted values for one category at an asset
+
+T1: Successful save in any page navigates one back to page "Allocation Diagram"
+
+T0: Basic prototype that can create and visualize allocation records
+
+T9: When an allocation record has only one value for a category, the pie chart looks funny
+
+T4: Let allocation diagram show the development over multiple consecutive records
+
+T13: Allow float position amounts in records
+
+T2: When navigating to "Allocation Diagram" the diagram is not updated
+
+T10: All categories and values should be configurable in one page
+
+T17: Do not reload existing category values inside show_configure_categories_page.
+     They should be reloaded only when needed as side-effect of a user interaction.
+     Thereby merge existing categories and values into one datastructure.
+
+T15: Rename AppError Error and streamline its use. Remove all map_err calls
+
+T20: list_asset_category_values should not be called from the ui update function
+
+T8: Allocation records must remember not only assets but also their values at record creation time
+    in order to stay constant over changes to asset values
+    
+T6: Allow for adding assets that lack category values and show them as "<not set>" in diagrams
+
+T14: The entire app must be scrollable in case that the content exceeds the main window
