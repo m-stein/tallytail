@@ -1,15 +1,15 @@
+use core_lib::{
+    AllocationRecord, Asset, AssetReference, AssetReferenceType, CategoryAssignment,
+    add_asset_input::AddAssetInput, allocation_diagram_data::AllocationDiagramData,
+    category::Category, category_value::CategoryValue,
+};
+use eyre::eyre;
+use rusqlite::{params, types::FromSqlError};
 use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
-use core_lib::{
-    AllocationRecord, Asset, CategoryAssignment, add_asset_input::AddAssetInput,
-    allocation_diagram_data::AllocationDiagramData, category::Category,
-    category_value::CategoryValue,
-};
-use eyre::eyre;
-use rusqlite::params;
 
 pub fn get_alloc_diagram_data(category_id: i64, days: i64) -> eyre::Result<AllocationDiagramData> {
     let records = get_latest_records(days as usize)?;
@@ -81,6 +81,36 @@ fn add_asset_raw(asset: &Asset, catgy_assignms: &[CategoryAssignment]) -> eyre::
     }
     tx.commit()?;
     Ok(())
+}
+
+pub fn get_assets() -> eyre::Result<Vec<Asset>> {
+    let connection = rusqlite::Connection::open("../data/assets.sdb")?;
+    let mut stmt = connection.prepare(
+        "SELECT id, name, reference_type, reference_value
+                FROM assets
+                ORDER BY name ASC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        let reference_type_str: String = row.get(2)?;
+        let reference_type: AssetReferenceType = reference_type_str.parse().map_err(|_| {
+            FromSqlError::Other(
+                format!("Invalid AssetReferenceType: '{reference_type_str}'").into(),
+            )
+        })?;
+        Ok(Asset {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            reference: AssetReference {
+                r#type: reference_type,
+                value: row.get(3)?,
+            },
+        })
+    })?;
+    let mut assets = Vec::new();
+    for row in rows {
+        assets.push(row?);
+    }
+    Ok(assets)
 }
 
 pub fn get_categories() -> eyre::Result<Vec<Category>> {

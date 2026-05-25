@@ -2,11 +2,11 @@ use eyre::eyre;
 use std::sync::mpsc;
 
 use core_lib::{
-    AllocationRecord, GetAllocDiagramDataArgs, add_asset_input::AddAssetInput,
+    AllocationRecord, Asset, GetAllocDiagramDataArgs, add_asset_input::AddAssetInput,
     allocation_diagram_data::AllocationDiagramData, category::Category,
 };
 use ui_lib::app_backend::{
-    AddAssetRx, AppBackend, GetAllocDiagramDataRx, GetCategoriesRx, GetLatestRecordRx,
+    AddAssetRx, AppBackend, GetAllocDiagramDataRx, GetAssetsRx, GetCategoriesRx, GetLatestRecordRx,
 };
 
 pub struct WebBackend;
@@ -22,6 +22,13 @@ impl WebBackend {
         Ok(reqwest::get(Self::request_url("get_categories"))
             .await?
             .json::<Vec<Category>>()
+            .await?)
+    }
+
+    async fn get_assets() -> eyre::Result<Vec<Asset>> {
+        Ok(reqwest::get(Self::request_url("get_assets"))
+            .await?
+            .json::<Vec<Asset>>()
             .await?)
     }
 
@@ -72,6 +79,15 @@ impl AppBackend for WebBackend {
         let (tx, rx) = mpsc::channel();
         wasm_bindgen_futures::spawn_local(async move {
             let res = Self::get_categories().await;
+            let _ = tx.send(res);
+        });
+        rx
+    }
+
+    fn start_get_assets(&self) -> GetAssetsRx {
+        let (tx, rx) = mpsc::channel();
+        wasm_bindgen_futures::spawn_local(async move {
+            let res = Self::get_assets().await;
             let _ = tx.send(res);
         });
         rx

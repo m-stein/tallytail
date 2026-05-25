@@ -1,5 +1,6 @@
 pub mod add_asset_input;
 pub mod allocation_diagram_data;
+pub mod allocation_record_input;
 pub mod category;
 pub mod category_value;
 

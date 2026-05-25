@@ -1,15 +1,20 @@
 use crate::app_backend::{
-    AddAssetRx, AppBackend, GetAllocDiagramDataRx, GetCategoriesRx, GetLatestRecordRx,
+    AddAssetRx, AppBackend, GetAllocDiagramDataRx, GetAssetsRx, GetCategoriesRx, GetLatestRecordRx,
 };
 use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
 use crate::png::load_png_texture_from_bytes;
 use core_lib::AssetReferenceType;
 use core_lib::add_asset_input::{AddAssetInput, CategoryAssignmentInput};
+use core_lib::allocation_record_input::AllocationPositionInput;
 use core_lib::{
     AllocationRecord, allocation_diagram_data::AllocationDiagramData, category::Category,
 };
 use eframe::egui;
 use egui::TextWrapMode;
+use egui_extras::DatePickerButton;
+use jiff::Zoned;
+use jiff::civil::Date;
+use std::collections::HashMap;
 use strum::IntoEnumIterator;
 
 #[derive(PartialEq)]
@@ -20,12 +25,21 @@ enum Page {
     AddAllocationRecord,
 }
 
+pub struct PositionItem {
+    pub id: i64,
+    pub label: String,
+    pub amount_input: String,
+}
+
 #[allow(unused)]
 pub struct EframeApp<B: AppBackend> {
     backend: B,
     message: Option<String>,
     pending_req_cnt: usize,
 
+    asset_name_by_id: HashMap<i64, String>,
+    allocation_record_date: Date,
+    allocation_record_assets: Vec<PositionItem>,
     alloc_diagram_category_id: Option<i64>,
     alloc_diagram_data: Option<AllocationDiagramData>,
     latest_record: Option<AllocationRecord>,
@@ -35,6 +49,7 @@ pub struct EframeApp<B: AppBackend> {
     get_latest_record_rx: Option<GetLatestRecordRx>,
     get_alloc_diagram_data_rx: Option<GetAllocDiagramDataRx>,
     get_categories_rx: Option<GetCategoriesRx>,
+    get_assets_rx: Option<GetAssetsRx>,
     add_asset_rx: Option<AddAssetRx>,
 
     page: Page,
@@ -63,15 +78,19 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             backend,
             squirrel_texture,
             page: Page::AllocationDiagram,
+            allocation_record_date: Zoned::now().date(),
+            allocation_record_assets: Vec::new(),
             message: None,
             alloc_diagram_category_id: None,
             alloc_diagram_data: None,
             categories: Vec::new(),
+            asset_name_by_id: HashMap::new(),
             pending_req_cnt: 0,
             latest_record: None,
             add_asset_input: AddAssetInput::default(),
             get_alloc_diagram_data_rx: None,
             get_categories_rx: None,
+            get_assets_rx: None,
             get_latest_record_rx: None,
             add_asset_rx: None,
         };
@@ -106,6 +125,35 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 }
             }
             self.get_categories_rx = None;
+            self.decr_pending_req_cnt();
+        }
+    }
+
+    fn poll_get_assets_rx(&mut self) {
+        if let Some(rx) = &self.get_assets_rx
+            && let Ok(result) = rx.try_recv()
+        {
+            match result {
+                Ok(assets) => {
+                    self.asset_name_by_id.clear();
+                    self.allocation_record_assets.clear();
+
+                    for asset in assets {
+                        self.asset_name_by_id.insert(asset.id, asset.name.clone());
+
+                        self.allocation_record_assets.push(PositionItem {
+                            id: asset.id,
+                            label: format!("{} ({})", asset.name, asset.reference.value),
+                            amount_input: String::new(),
+                        });
+                    }
+                    self.message = None;
+                }
+                Err(error) => {
+                    self.message = Some(error.to_string());
+                }
+            }
+            self.get_assets_rx = None;
             self.decr_pending_req_cnt();
         }
     }
@@ -163,6 +211,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     fn start_get_categories(&mut self) {
         self.message = None;
         self.get_categories_rx = Some(self.backend.start_get_categories());
+        self.incr_pending_req_cnt();
+    }
+
+    fn start_get_assets(&mut self) {
+        self.message = None;
+        self.get_assets_rx = Some(self.backend.start_get_assets());
         self.incr_pending_req_cnt();
     }
 
@@ -284,7 +338,17 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         }
     }
 
+    fn reset_add_allocation_record_page(&mut self) {
+        self.allocation_record_date = Zoned::now().date();
+        for asset in &mut self.allocation_record_assets {
+            asset.amount_input.clear();
+        }
+    }
+
     fn init_add_allocation_record_page(&mut self) -> eyre::Result<()> {
+        self.reset_add_allocation_record_page();
+        self.start_get_assets();
+        self.message = None;
         Ok(())
     }
 
@@ -415,10 +479,91 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
     fn show_configure_categories_page(&mut self, _ui: &mut egui::Ui) {}
 
-    fn show_add_allocation_record_page(&mut self, _ui: &mut egui::Ui) {}
+    fn show_add_allocation_record_page(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("Add Allocation Record")
+                .heading()
+                .size(Self::H2_SIZE),
+        );
+        ui.add_space(Self::SPACE_2);
+
+        ui.label("Date:");
+        ui.add(DatePickerButton::new(&mut self.allocation_record_date));
+
+        ui.add_space(Self::SPACE_2);
+        ui.label("Positions:");
+
+        ui.vertical(|ui| {
+            for asset in &mut self.allocation_record_assets {
+                ui.horizontal(|ui| {
+                    ui.add(egui::TextEdit::singleline(&mut asset.amount_input).desired_width(80.0));
+                    ui.label(&asset.label);
+                });
+            }
+        });
+
+        ui.add_space(Self::SPACE_2);
+        if ui.button("Save").clicked() {
+            let mut positions = Vec::new();
+            let mut validation_error = None;
+
+            for asset in &self.allocation_record_assets {
+                let trimmed = asset.amount_input.trim();
+
+                if trimmed.is_empty() {
+                    continue;
+                }
+
+                let amount = match trimmed.parse::<f64>() {
+                    Ok(value) => value,
+                    Err(_) => {
+                        validation_error =
+                            Some(format!("Invalid amount for asset '{}'", asset.label));
+                        break;
+                    }
+                };
+
+                if amount <= 0. {
+                    validation_error = Some(format!(
+                        "Amount must be greater than 0 for asset '{}'",
+                        asset.label
+                    ));
+                    break;
+                }
+
+                positions.push(AllocationPositionInput {
+                    asset_id: asset.id,
+                    amount,
+                });
+            }
+
+            if let Some(message) = validation_error {
+                self.message = Some(message);
+            } else {
+                /*
+                match self.asset_service.add_allocation_record(
+                    self.allocation_record_date,
+                    positions,
+                ) {
+                    Ok(()) => {
+                        self.message = Some(format!(
+                            "Allocation record '{}' was saved.",
+                            self.allocation_record_date.to_string()
+                        ));
+                        self.reset_add_allocation_record_page();
+                    }
+                    Err(err) => {
+                        self.message = Some(err.to_string());
+                    }
+                }
+                */
+            }
+        }
+    }
 
     fn show_content(&mut self, ui: &mut egui::Ui) {
         self.poll_get_categories_rx();
+        self.poll_get_assets_rx();
         self.poll_get_latest_record_rx();
         self.poll_get_alloc_diagram_data_rx();
         self.poll_add_asset_rx();
