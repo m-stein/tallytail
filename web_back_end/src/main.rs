@@ -39,7 +39,7 @@ async fn get_alloc_diagram_data(
 }
 
 async fn add_asset(Json(input): Json<AddAssetInput>) -> eyre::Result<Json<()>, WebBackEndError> {
-    Ok(Json(infra_lib::add_asset(&input)?))
+    Ok(Json(infra_lib::add_asset(input)?))
 }
 
 async fn get_categories() -> eyre::Result<Json<Vec<Category>>, WebBackEndError> {

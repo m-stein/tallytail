@@ -238,7 +238,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     }
 
     fn start_add_asset(&mut self) {
-        self.add_asset_rx = Some(self.backend.start_add_asset(&self.add_asset_input));
+        self.add_asset_rx = Some(self.backend.start_add_asset(self.add_asset_input.clone()));
         self.reset_add_asset_page();
         self.incr_pending_req_cnt();
     }

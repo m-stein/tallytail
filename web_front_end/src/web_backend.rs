@@ -53,10 +53,10 @@ impl WebBackend {
             .await?)
     }
 
-    async fn add_asset(input: &AddAssetInput) -> eyre::Result<()> {
+    async fn add_asset(input: AddAssetInput) -> eyre::Result<()> {
         reqwest::Client::new()
             .post(Self::request_url("add_asset"))
-            .json(input)
+            .json(&input)
             .send()
             .await?
             .error_for_status()?;
@@ -111,11 +111,10 @@ impl AppBackend for WebBackend {
         rx
     }
 
-    fn start_add_asset(&self, input: &AddAssetInput) -> AddAssetRx {
-        let input = input.clone();
+    fn start_add_asset(&self, input: AddAssetInput) -> AddAssetRx {
         let (tx, rx) = mpsc::channel();
         wasm_bindgen_futures::spawn_local(async move {
-            let result = Self::add_asset(&input).await;
+            let result = Self::add_asset(input).await;
             let _ = tx.send(result);
         });
         rx

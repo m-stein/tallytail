@@ -17,7 +17,7 @@ pub fn get_alloc_diagram_data(category_id: i64, days: i64) -> eyre::Result<Alloc
     Ok(AllocationDiagramData::new(records, &category_name))
 }
 
-pub fn add_asset(input: &AddAssetInput) -> eyre::Result<()> {
+pub fn add_asset(input: AddAssetInput) -> eyre::Result<()> {
     let name = input.name.trim();
     if name.is_empty() {
         return Err(eyre!("Asset name must not be empty"));
