@@ -3,19 +3,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
-pub struct CategoryAssignmentInput {
+pub struct CategoryAssignment {
     pub value_id: Option<i64>,
     pub percentage: f64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct AddAssetInput {
+pub struct AddAssetArgs {
     pub name: String,
     pub reference: AssetReference,
-    pub catgy_id_to_assignm_inputs: HashMap<i64, Vec<CategoryAssignmentInput>>,
+    pub category_id_to_assignment: HashMap<i64, Vec<CategoryAssignment>>,
 }
 
-impl Default for AddAssetInput {
+impl Default for AddAssetArgs {
     fn default() -> Self {
         Self {
             name: String::new(),
@@ -23,7 +23,7 @@ impl Default for AddAssetInput {
                 r#type: AssetReferenceType::Isin,
                 value: String::new(),
             },
-            catgy_id_to_assignm_inputs: HashMap::new(),
+            category_id_to_assignment: HashMap::new(),
         }
     }
 }

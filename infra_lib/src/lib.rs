@@ -1,7 +1,8 @@
 use core_lib::{
     AllocationRecord, Asset, AssetReference, AssetReferenceType, CategoryAssignment,
-    add_asset_input::AddAssetInput, allocation_diagram_data::AllocationDiagramData,
-    category::Category, category_value::CategoryValue,
+    GetAllocDiagramDataArgs, add_asset_args::AddAssetArgs,
+    allocation_diagram_data::AllocationDiagramData, category::Category,
+    category_value::CategoryValue,
 };
 use eyre::eyre;
 use rusqlite::{params, types::FromSqlError};
@@ -11,41 +12,43 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub fn get_alloc_diagram_data(category_id: i64, days: i64) -> eyre::Result<AllocationDiagramData> {
-    let records = get_latest_records(days as usize)?;
-    let category_name = get_category_name_by_id(category_id)?;
+pub fn get_alloc_diagram_data(
+    args: GetAllocDiagramDataArgs,
+) -> eyre::Result<AllocationDiagramData> {
+    let records = get_latest_records(args.days as usize)?;
+    let category_name = get_category_name_by_id(args.category_id)?;
     Ok(AllocationDiagramData::new(records, &category_name))
 }
 
-pub fn add_asset(input: AddAssetInput) -> eyre::Result<()> {
-    let name = input.name.trim();
+pub fn add_asset(args: AddAssetArgs) -> eyre::Result<()> {
+    let name = args.name.trim();
     if name.is_empty() {
         return Err(eyre!("Asset name must not be empty"));
     }
-    if input.reference.value.is_empty() {
+    if args.reference.value.is_empty() {
         return Err(eyre!("Reference value must not be empty"));
     }
     let asset = Asset {
         id: 0,
         name: name.to_string(),
-        reference: input.reference.clone(),
+        reference: args.reference.clone(),
     };
     let mut catgy_assignms: Vec<CategoryAssignment> = Vec::new();
-    for (_, assignm_inputs) in input.catgy_id_to_assignm_inputs.iter() {
+    for (_, assignments) in args.category_id_to_assignment.iter() {
         let mut percentage = 0.;
         let mut seen_value_ids = HashSet::new();
-        for assignm_input in assignm_inputs {
-            if assignm_input.percentage == 0. {
+        for assignment in assignments {
+            if assignment.percentage == 0. {
                 return Err(eyre!("Category value has percentage of 0%"));
             }
-            if let Some(id) = assignm_input.value_id {
+            if let Some(id) = assignment.value_id {
                 if !seen_value_ids.insert(id) {
                     return Err(eyre!("Duplicate category values"));
                 }
-                percentage += assignm_input.percentage;
+                percentage += assignment.percentage;
                 catgy_assignms.push(CategoryAssignment {
                     value_id: id,
-                    ratio: assignm_input.percentage / 100.,
+                    ratio: assignment.percentage / 100.,
                 });
             } else {
                 return Err(eyre!("Category value unset"));

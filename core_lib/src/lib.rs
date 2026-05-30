@@ -1,4 +1,4 @@
-pub mod add_asset_input;
+pub mod add_asset_args;
 pub mod allocation_diagram_data;
 pub mod allocation_record_input;
 pub mod category;
@@ -59,7 +59,7 @@ pub struct AllocationRecord {
 
 #[derive(Deserialize, Serialize)]
 pub struct GetAllocDiagramDataArgs {
-    pub catg_id: i64,
+    pub category_id: i64,
     pub days: i64,
 }
 

@@ -3,12 +3,12 @@ use crate::app_backend::{
 };
 use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
 use crate::png::load_png_texture_from_bytes;
-use core_lib::AssetReferenceType;
-use core_lib::add_asset_input::{AddAssetInput, CategoryAssignmentInput};
+use core_lib::add_asset_args::{AddAssetArgs, CategoryAssignment};
 use core_lib::allocation_record_input::AllocationPositionInput;
 use core_lib::{
     AllocationRecord, allocation_diagram_data::AllocationDiagramData, category::Category,
 };
+use core_lib::{AssetReferenceType, GetAllocDiagramDataArgs};
 use eframe::egui;
 use egui::TextWrapMode;
 use egui_extras::DatePickerButton;
@@ -26,9 +26,9 @@ enum Page {
 }
 
 pub struct PositionItem {
-    pub id: i64,
+    pub asset_id: i64,
     pub label: String,
-    pub amount_input: String,
+    pub amount: String,
 }
 
 #[allow(unused)]
@@ -44,7 +44,7 @@ pub struct EframeApp<B: AppBackend> {
     alloc_diagram_data: Option<AllocationDiagramData>,
     latest_record: Option<AllocationRecord>,
     categories: Vec<Category>,
-    add_asset_input: AddAssetInput,
+    add_asset_args: AddAssetArgs,
 
     get_latest_record_rx: Option<GetLatestRecordRx>,
     get_alloc_diagram_data_rx: Option<GetAllocDiagramDataRx>,
@@ -87,7 +87,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             asset_name_by_id: HashMap::new(),
             pending_req_cnt: 0,
             latest_record: None,
-            add_asset_input: AddAssetInput::default(),
+            add_asset_args: AddAssetArgs::default(),
             get_alloc_diagram_data_rx: None,
             get_categories_rx: None,
             get_assets_rx: None,
@@ -142,9 +142,9 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                         self.asset_name_by_id.insert(asset.id, asset.name.clone());
 
                         self.allocation_record_assets.push(PositionItem {
-                            id: asset.id,
+                            asset_id: asset.id,
                             label: format!("{} ({})", asset.name, asset.reference.value),
-                            amount_input: String::new(),
+                            amount: String::new(),
                         });
                     }
                     self.message = None;
@@ -229,8 +229,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     fn start_get_alloc_diagram_data(&mut self) {
         if let Some(category_id) = self.alloc_diagram_category_id {
             self.message = None;
-            self.get_alloc_diagram_data_rx =
-                Some(self.backend.start_get_alloc_diagram_data(category_id, 5));
+            self.get_alloc_diagram_data_rx = Some(self.backend.start_get_alloc_diagram_data(
+                GetAllocDiagramDataArgs {
+                    category_id,
+                    days: 5,
+                },
+            ));
             self.incr_pending_req_cnt();
         } else {
             self.alloc_diagram_data = None;
@@ -238,7 +242,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     }
 
     fn start_add_asset(&mut self) {
-        self.add_asset_rx = Some(self.backend.start_add_asset(self.add_asset_input.clone()));
+        self.add_asset_rx = Some(self.backend.start_add_asset(self.add_asset_args.clone()));
         self.reset_add_asset_page();
         self.incr_pending_req_cnt();
     }
@@ -341,7 +345,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     fn reset_add_allocation_record_page(&mut self) {
         self.allocation_record_date = Zoned::now().date();
         for asset in &mut self.allocation_record_assets {
-            asset.amount_input.clear();
+            asset.amount.clear();
         }
     }
 
@@ -361,7 +365,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     }
 
     fn reset_add_asset_page(&mut self) {
-        self.add_asset_input = AddAssetInput::default();
+        self.add_asset_args = AddAssetArgs::default();
     }
 
     fn init_add_asset_page(&mut self) -> eyre::Result<()> {
@@ -380,16 +384,16 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         ui.add_space(Self::SPACE_2);
 
         ui.label("Name:");
-        ui.text_edit_singleline(&mut self.add_asset_input.name);
+        ui.text_edit_singleline(&mut self.add_asset_args.name);
         ui.add_space(Self::SPACE_2);
 
         ui.label("Reference type:");
         egui::ComboBox::from_id_salt("reference_type")
-            .selected_text(self.add_asset_input.reference.r#type.to_string())
+            .selected_text(self.add_asset_args.reference.r#type.to_string())
             .show_ui(ui, |ui| {
                 for t in AssetReferenceType::iter() {
                     ui.selectable_value(
-                        &mut self.add_asset_input.reference.r#type,
+                        &mut self.add_asset_args.reference.r#type,
                         t,
                         t.to_string(),
                     );
@@ -398,18 +402,18 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         ui.add_space(Self::SPACE_2);
 
         ui.label("Reference value:");
-        ui.text_edit_singleline(&mut self.add_asset_input.reference.value);
+        ui.text_edit_singleline(&mut self.add_asset_args.reference.value);
         ui.vertical(|ui| {
             for catgy in &mut self.categories {
-                let assignm_inputs = self
-                    .add_asset_input
-                    .catgy_id_to_assignm_inputs
+                let assignments = self
+                    .add_asset_args
+                    .category_id_to_assignment
                     .entry(catgy.id)
                     .or_default();
 
                 ui.add_space(Self::SPACE_2);
                 ui.horizontal(|ui| {
-                    if assignm_inputs.len() < catgy.values.len()
+                    if assignments.len() < catgy.values.len()
                         && ui
                             .add_sized(
                                 [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
@@ -417,8 +421,8 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                             )
                             .clicked()
                     {
-                        assignm_inputs.push(CategoryAssignmentInput {
-                            percentage: if assignm_inputs.is_empty() { 100. } else { 0. },
+                        assignments.push(CategoryAssignment {
+                            percentage: if assignments.is_empty() { 100. } else { 0. },
                             value_id: None,
                         });
                     }
@@ -426,10 +430,10 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 });
                 ui.add_space(Self::SPACE_1);
 
-                let mut del_input_idx: Option<usize> = None;
-                for input_idx in (0..assignm_inputs.len()).rev() {
-                    let assignm_input = &mut assignm_inputs[input_idx];
-                    let selected_text = assignm_input
+                let mut del_assignm_idx: Option<usize> = None;
+                for assignm_idx in (0..assignments.len()).rev() {
+                    let assignment = &mut assignments[assignm_idx];
+                    let selected_text = assignment
                         .value_id
                         .and_then(|id| catgy.values.iter().find(|val| val.id == id))
                         .map(|val| val.name.clone())
@@ -438,18 +442,18 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     ui.horizontal(|ui| {
                         ui.add_sized(
                             [70.0, Self::DEFAULT_INPUT_HEIGHT],
-                            egui::DragValue::new(&mut assignm_input.percentage)
+                            egui::DragValue::new(&mut assignment.percentage)
                                 .range(0.0..=100.0)
                                 .speed(0.1)
                                 .fixed_decimals(2)
                                 .suffix("%"),
                         );
-                        egui::ComboBox::from_id_salt(format!("{}:{}", catgy.id, input_idx))
+                        egui::ComboBox::from_id_salt(format!("{}:{}", catgy.id, assignm_idx))
                             .selected_text(selected_text)
                             .show_ui(ui, |ui| {
                                 for value in catgy.values.iter() {
                                     ui.selectable_value(
-                                        &mut assignm_input.value_id,
+                                        &mut assignment.value_id,
                                         Some(value.id),
                                         &value.name,
                                     );
@@ -462,12 +466,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                             )
                             .clicked()
                         {
-                            del_input_idx = Some(input_idx);
+                            del_assignm_idx = Some(assignm_idx);
                         }
                     });
                 }
-                if let Some(idx) = del_input_idx {
-                    assignm_inputs.remove(idx);
+                if let Some(idx) = del_assignm_idx {
+                    assignments.remove(idx);
                 }
             }
         });
@@ -496,7 +500,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         ui.vertical(|ui| {
             for asset in &mut self.allocation_record_assets {
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut asset.amount_input).desired_width(80.0));
+                    ui.add(egui::TextEdit::singleline(&mut asset.amount).desired_width(80.0));
                     ui.label(&asset.label);
                 });
             }
@@ -508,7 +512,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             let mut validation_error = None;
 
             for asset in &self.allocation_record_assets {
-                let trimmed = asset.amount_input.trim();
+                let trimmed = asset.amount.trim();
 
                 if trimmed.is_empty() {
                     continue;
@@ -532,7 +536,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 }
 
                 positions.push(AllocationPositionInput {
-                    asset_id: asset.id,
+                    asset_id: asset.asset_id,
                     amount,
                 });
             }

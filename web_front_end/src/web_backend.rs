@@ -2,7 +2,7 @@ use eyre::eyre;
 use std::sync::mpsc;
 
 use core_lib::{
-    AllocationRecord, Asset, GetAllocDiagramDataArgs, add_asset_input::AddAssetInput,
+    AllocationRecord, Asset, GetAllocDiagramDataArgs, add_asset_args::AddAssetArgs,
     allocation_diagram_data::AllocationDiagramData, category::Category,
 };
 use ui_lib::app_backend::{
@@ -45,7 +45,10 @@ impl WebBackend {
     ) -> eyre::Result<AllocationDiagramData> {
         Ok(reqwest::Client::new()
             .post(Self::request_url("get_alloc_diagram_data"))
-            .json(&GetAllocDiagramDataArgs { catg_id, days })
+            .json(&GetAllocDiagramDataArgs {
+                category_id: catg_id,
+                days,
+            })
             .send()
             .await?
             .error_for_status()?
@@ -53,10 +56,10 @@ impl WebBackend {
             .await?)
     }
 
-    async fn add_asset(input: AddAssetInput) -> eyre::Result<()> {
+    async fn add_asset(args: AddAssetArgs) -> eyre::Result<()> {
         reqwest::Client::new()
             .post(Self::request_url("add_asset"))
-            .json(&input)
+            .json(&args)
             .send()
             .await?
             .error_for_status()?;
@@ -102,19 +105,19 @@ impl AppBackend for WebBackend {
         rx
     }
 
-    fn start_get_alloc_diagram_data(&self, catg_id: i64, days: i64) -> GetAllocDiagramDataRx {
+    fn start_get_alloc_diagram_data(&self, args: GetAllocDiagramDataArgs) -> GetAllocDiagramDataRx {
         let (tx, rx) = mpsc::channel();
         wasm_bindgen_futures::spawn_local(async move {
-            let result = Self::get_alloc_diagram_data(catg_id, days).await;
+            let result = Self::get_alloc_diagram_data(args.category_id, args.days).await;
             let _ = tx.send(result);
         });
         rx
     }
 
-    fn start_add_asset(&self, input: AddAssetInput) -> AddAssetRx {
+    fn start_add_asset(&self, args: AddAssetArgs) -> AddAssetRx {
         let (tx, rx) = mpsc::channel();
         wasm_bindgen_futures::spawn_local(async move {
-            let result = Self::add_asset(input).await;
+            let result = Self::add_asset(args).await;
             let _ = tx.send(result);
         });
         rx

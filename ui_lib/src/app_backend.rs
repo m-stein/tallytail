@@ -1,5 +1,5 @@
 use core_lib::{
-    AllocationRecord, Asset, add_asset_input::AddAssetInput,
+    AllocationRecord, Asset, GetAllocDiagramDataArgs, add_asset_args::AddAssetArgs,
     allocation_diagram_data::AllocationDiagramData, category::Category,
 };
 use std::sync::mpsc::Receiver;
@@ -15,6 +15,6 @@ pub trait AppBackend {
     fn start_get_categories(&self) -> GetCategoriesRx;
     fn start_get_assets(&self) -> GetAssetsRx;
     fn start_get_latest_record(&self) -> GetLatestRecordRx;
-    fn start_get_alloc_diagram_data(&self, category_id: i64, days: i64) -> GetAllocDiagramDataRx;
-    fn start_add_asset(&self, input: AddAssetInput) -> AddAssetRx;
+    fn start_get_alloc_diagram_data(&self, args: GetAllocDiagramDataArgs) -> GetAllocDiagramDataRx;
+    fn start_add_asset(&self, args: AddAssetArgs) -> AddAssetRx;
 }

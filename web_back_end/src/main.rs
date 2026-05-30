@@ -6,7 +6,7 @@ use axum::{
     routing::{get, post},
 };
 use core_lib::{
-    AllocationRecord, Asset, GetAllocDiagramDataArgs, add_asset_input::AddAssetInput,
+    AllocationRecord, Asset, GetAllocDiagramDataArgs, add_asset_args::AddAssetArgs,
     allocation_diagram_data::AllocationDiagramData, category::Category,
 };
 use std::net::SocketAddr;
@@ -32,14 +32,11 @@ async fn main() -> eyre::Result<()> {
 async fn get_alloc_diagram_data(
     Json(args): Json<GetAllocDiagramDataArgs>,
 ) -> eyre::Result<Json<AllocationDiagramData>, WebBackEndError> {
-    Ok(Json(infra_lib::get_alloc_diagram_data(
-        args.catg_id,
-        args.days,
-    )?))
+    Ok(Json(infra_lib::get_alloc_diagram_data(args)?))
 }
 
-async fn add_asset(Json(input): Json<AddAssetInput>) -> eyre::Result<Json<()>, WebBackEndError> {
-    Ok(Json(infra_lib::add_asset(input)?))
+async fn add_asset(Json(args): Json<AddAssetArgs>) -> eyre::Result<Json<()>, WebBackEndError> {
+    Ok(Json(infra_lib::add_asset(args)?))
 }
 
 async fn get_categories() -> eyre::Result<Json<Vec<Category>>, WebBackEndError> {

@@ -1,4 +1,4 @@
-use core_lib::add_asset_input::AddAssetInput;
+use core_lib::{GetAllocDiagramDataArgs, add_asset_args::AddAssetArgs};
 use ui_lib::app_backend::AppBackend;
 
 macro_rules! requests {
@@ -26,7 +26,7 @@ impl AppBackend for DesktopBackend {
         get_categories();
         get_assets();
         get_latest_record();
-        get_alloc_diagram_data(category_id: i64, days: i64);
-        add_asset(input: AddAssetInput);
+        get_alloc_diagram_data(args: GetAllocDiagramDataArgs);
+        add_asset(args: AddAssetArgs);
     }
 }
