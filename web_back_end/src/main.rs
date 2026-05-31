@@ -1,10 +1,7 @@
 mod error;
 
 use crate::error::WebBackEndError;
-use axum::{
-    Json, Router,
-    routing::{get, post},
-};
+use axum::{Json, Router, routing::post};
 use core_lib::{
     AllocationRecord, Asset, GetAllocDiagramDataArgs, add_asset_args::AddAssetArgs,
     allocation_diagram_data::AllocationDiagramData, category::Category,
@@ -15,10 +12,10 @@ use tower_http::cors::CorsLayer;
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     let router = Router::new()
-        .route("/get_latest_record", get(get_latest_record))
+        .route("/get_latest_record", post(get_latest_record))
         .route("/get_alloc_diagram_data", post(get_alloc_diagram_data))
-        .route("/get_categories", get(get_categories))
-        .route("/get_assets", get(get_assets))
+        .route("/get_categories", post(get_categories))
+        .route("/get_assets", post(get_assets))
         .route("/add_asset", post(add_asset))
         .layer(CorsLayer::permissive());
 
@@ -31,22 +28,25 @@ async fn main() -> eyre::Result<()> {
 
 async fn get_alloc_diagram_data(
     Json(args): Json<GetAllocDiagramDataArgs>,
-) -> eyre::Result<Json<AllocationDiagramData>, WebBackEndError> {
+) -> Result<Json<AllocationDiagramData>, WebBackEndError> {
     Ok(Json(infra_lib::get_alloc_diagram_data(args)?))
 }
 
-async fn add_asset(Json(args): Json<AddAssetArgs>) -> eyre::Result<Json<()>, WebBackEndError> {
-    Ok(Json(infra_lib::add_asset(args)?))
+async fn add_asset(Json(args): Json<AddAssetArgs>) -> Result<Json<()>, WebBackEndError> {
+    infra_lib::add_asset(args)?;
+    Ok(Json(()))
 }
 
-async fn get_categories() -> eyre::Result<Json<Vec<Category>>, WebBackEndError> {
+async fn get_categories(Json(()): Json<()>) -> Result<Json<Vec<Category>>, WebBackEndError> {
     Ok(Json(infra_lib::get_categories()?))
 }
 
-async fn get_assets() -> eyre::Result<Json<Vec<Asset>>, WebBackEndError> {
+async fn get_assets(Json(()): Json<()>) -> Result<Json<Vec<Asset>>, WebBackEndError> {
     Ok(Json(infra_lib::get_assets()?))
 }
 
-async fn get_latest_record() -> eyre::Result<Json<Option<AllocationRecord>>, WebBackEndError> {
+async fn get_latest_record(
+    Json(()): Json<()>,
+) -> Result<Json<Option<AllocationRecord>>, WebBackEndError> {
     Ok(Json(infra_lib::get_latest_record()?))
 }

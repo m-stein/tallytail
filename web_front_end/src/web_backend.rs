@@ -1,4 +1,5 @@
 use eyre::eyre;
+use serde::{Serialize, de::DeserializeOwned};
 use std::sync::mpsc;
 
 use core_lib::{
@@ -18,52 +19,36 @@ impl WebBackend {
         format!("{}/{}", Self::SERVER_URL, request)
     }
 
-    async fn get_categories() -> eyre::Result<Vec<Category>> {
-        Ok(reqwest::get(Self::request_url("get_categories"))
-            .await?
-            .json::<Vec<Category>>()
-            .await?)
-    }
-
-    async fn get_assets() -> eyre::Result<Vec<Asset>> {
-        Ok(reqwest::get(Self::request_url("get_assets"))
-            .await?
-            .json::<Vec<Asset>>()
-            .await?)
-    }
-
-    async fn get_latest_record() -> eyre::Result<Option<AllocationRecord>> {
-        Ok(reqwest::get(Self::request_url("get_latest_record"))
-            .await?
-            .json::<Option<AllocationRecord>>()
-            .await?)
-    }
-
-    async fn get_alloc_diagram_data(
-        catg_id: i64,
-        days: i64,
-    ) -> eyre::Result<AllocationDiagramData> {
+    async fn post<Args, Ret>(request: &str, args: Args) -> eyre::Result<Ret>
+    where
+        Args: Serialize,
+        Ret: DeserializeOwned,
+    {
         Ok(reqwest::Client::new()
-            .post(Self::request_url("get_alloc_diagram_data"))
-            .json(&GetAllocDiagramDataArgs {
-                category_id: catg_id,
-                days,
-            })
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<AllocationDiagramData>()
-            .await?)
-    }
-
-    async fn add_asset(args: AddAssetArgs) -> eyre::Result<()> {
-        reqwest::Client::new()
-            .post(Self::request_url("add_asset"))
+            .post(Self::request_url(request))
             .json(&args)
             .send()
             .await?
-            .error_for_status()?;
-        Ok(())
+            .error_for_status()?
+            .json::<Ret>()
+            .await?)
+    }
+
+    fn start_request<Args, Ret>(
+        request: &'static str,
+        args: Args,
+    ) -> mpsc::Receiver<eyre::Result<Ret>>
+    where
+        Args: Serialize + 'static,
+        Ret: DeserializeOwned + 'static,
+    {
+        let (tx, rx) = mpsc::channel();
+        wasm_bindgen_futures::spawn_local(async move {
+            let result = Self::post::<Args, Ret>(request, args).await;
+            let _ = tx.send(result);
+        });
+
+        rx
     }
 }
 
@@ -75,51 +60,30 @@ impl AppBackend for WebBackend {
             }
             _ => return Err(eyre!("unknown embedded asset path: {path}")),
         };
+
         Ok(bytes.into())
     }
 
     fn start_get_categories(&self) -> GetCategoriesRx {
-        let (tx, rx) = mpsc::channel();
-        wasm_bindgen_futures::spawn_local(async move {
-            let res = Self::get_categories().await;
-            let _ = tx.send(res);
-        });
-        rx
+        Self::start_request::<(), Vec<Category>>("get_categories", ())
     }
 
     fn start_get_assets(&self) -> GetAssetsRx {
-        let (tx, rx) = mpsc::channel();
-        wasm_bindgen_futures::spawn_local(async move {
-            let res = Self::get_assets().await;
-            let _ = tx.send(res);
-        });
-        rx
+        Self::start_request::<(), Vec<Asset>>("get_assets", ())
     }
 
     fn start_get_latest_record(&self) -> GetLatestRecordRx {
-        let (tx, rx) = mpsc::channel();
-        wasm_bindgen_futures::spawn_local(async move {
-            let result = Self::get_latest_record().await;
-            let _ = tx.send(result);
-        });
-        rx
+        Self::start_request::<(), Option<AllocationRecord>>("get_latest_record", ())
     }
 
     fn start_get_alloc_diagram_data(&self, args: GetAllocDiagramDataArgs) -> GetAllocDiagramDataRx {
-        let (tx, rx) = mpsc::channel();
-        wasm_bindgen_futures::spawn_local(async move {
-            let result = Self::get_alloc_diagram_data(args.category_id, args.days).await;
-            let _ = tx.send(result);
-        });
-        rx
+        Self::start_request::<GetAllocDiagramDataArgs, AllocationDiagramData>(
+            "get_alloc_diagram_data",
+            args,
+        )
     }
 
     fn start_add_asset(&self, args: AddAssetArgs) -> AddAssetRx {
-        let (tx, rx) = mpsc::channel();
-        wasm_bindgen_futures::spawn_local(async move {
-            let result = Self::add_asset(args).await;
-            let _ = tx.send(result);
-        });
-        rx
+        Self::start_request::<AddAssetArgs, ()>("add_asset", args)
     }
 }
