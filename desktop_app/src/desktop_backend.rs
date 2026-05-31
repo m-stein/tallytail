@@ -1,17 +1,42 @@
-use core_lib::{GetAllocDiagramDataArgs, add_asset_args::AddAssetArgs};
+use core_lib::{
+    GetAllocDiagramDataArgs, add_asset_args::AddAssetArgs, call_macro_with_request_list,
+};
 use ui_lib::app_backend::AppBackend;
 
-macro_rules! requests {
-    ($( $req:ident($($arg:ident : $arg_ty:ty),*); )*) => {
+macro_rules! implement_requests {
+
+    // For each request, redirect to one of the @one arms depending on whether
+    // the request has an argument or not
+    ($($request:ident($($arg_ty:ty)?) -> $ret_ty:ty;)*) => {
         paste::paste! {
-            $(fn [<start_ $req>](&self, $($arg: $arg_ty),*) -> ui_lib::app_backend::[<$req:camel Rx>] {
+            $(implement_requests!(@handler $request ($($arg_ty)?) -> $ret_ty);)*
+        }
+    };
+    // Request handler template for requests without arguments
+    (@handler $request:ident () -> $ret_ty:ty) => {
+        paste::paste! {
+            fn [<start_ $request>](&self) -> ui_lib::app_backend::[<$request:camel Rx>] {
                 let (tx, rx) = std::sync::mpsc::channel();
                 std::thread::spawn(move || {
-                    let result = infra_lib::$req($($arg),*);
-                    let _ = tx.send(result);
+                    let _ = tx.send(infra_lib::$request());
                 });
                 rx
-            })*
+            }
+        }
+    };
+    // Request handler template for requests with one argument
+    (@handler $request:ident ($arg_ty:ty) -> $ret_ty:ty) => {
+        paste::paste! {
+            fn [<start_ $request>](
+                &self,
+                args: $arg_ty,
+            ) -> ui_lib::app_backend::[<$request:camel Rx>] {
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let _ = tx.send(infra_lib::$request(args));
+                });
+                rx
+            }
         }
     };
 }
@@ -22,11 +47,5 @@ impl AppBackend for DesktopBackend {
     fn load_png_file(&self, path: &str) -> eyre::Result<Vec<u8>> {
         Ok(std::fs::read(format!("../{path}"))?)
     }
-    requests! {
-        get_categories();
-        get_assets();
-        get_latest_record();
-        get_alloc_diagram_data(args: GetAllocDiagramDataArgs);
-        add_asset(args: AddAssetArgs);
-    }
+    call_macro_with_request_list!(implement_requests);
 }

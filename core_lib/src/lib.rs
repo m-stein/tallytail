@@ -3,6 +3,7 @@ pub mod allocation_diagram_data;
 pub mod allocation_record_input;
 pub mod category;
 pub mod category_value;
+pub mod request_list;
 
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter, EnumString};

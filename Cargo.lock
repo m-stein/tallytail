@@ -4109,6 +4109,7 @@ dependencies = [
  "egui_extras",
  "eyre",
  "jiff",
+ "paste",
  "png",
  "strum",
 ]
@@ -4524,6 +4525,7 @@ dependencies = [
  "core_lib",
  "eframe",
  "eyre",
+ "paste",
  "reqwest",
  "serde",
  "ui_lib",

@@ -1,14 +1,35 @@
+use core_lib::{
+    AllocationRecord, Asset, GetAllocDiagramDataArgs, add_asset_args::AddAssetArgs,
+    allocation_diagram_data::AllocationDiagramData, call_macro_with_request_list,
+    category::Category,
+};
 use eyre::eyre;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::mpsc;
+use ui_lib::app_backend::AppBackend;
 
-use core_lib::{
-    AllocationRecord, Asset, GetAllocDiagramDataArgs, add_asset_args::AddAssetArgs,
-    allocation_diagram_data::AllocationDiagramData, category::Category,
-};
-use ui_lib::app_backend::{
-    AddAssetRx, AppBackend, GetAllocDiagramDataRx, GetAssetsRx, GetCategoriesRx, GetLatestRecordRx,
-};
+macro_rules! implement_requests {
+
+    // For each request, redirect to one of the @handler arms depending on whether
+    // the request has an argument or not
+    ($($request:ident($($arg_ty:ty)?) -> $ret_ty:ty;)*) => {
+        $(implement_requests!(@func $request ($($arg_ty)?) -> $ret_ty);)*
+    };
+    (@func $request:ident () -> $ret_ty:ty) => {
+        paste::paste! {
+            fn [<start_ $request>](&self) -> ui_lib::app_backend::[<$request:camel Rx>] {
+                Self::start_request::<(), $ret_ty>(stringify!($request), ())
+            }
+        }
+    };
+    (@func $request:ident ($arg_ty:ty) -> $ret_ty:ty) => {
+        paste::paste! {
+            fn [<start_ $request>](&self, args: $arg_ty) -> ui_lib::app_backend::[<$request:camel Rx>] {
+                Self::start_request::<$arg_ty, $ret_ty>(stringify!($request), args)
+            }
+        }
+    };
+}
 
 pub struct WebBackend;
 
@@ -63,27 +84,5 @@ impl AppBackend for WebBackend {
 
         Ok(bytes.into())
     }
-
-    fn start_get_categories(&self) -> GetCategoriesRx {
-        Self::start_request::<(), Vec<Category>>("get_categories", ())
-    }
-
-    fn start_get_assets(&self) -> GetAssetsRx {
-        Self::start_request::<(), Vec<Asset>>("get_assets", ())
-    }
-
-    fn start_get_latest_record(&self) -> GetLatestRecordRx {
-        Self::start_request::<(), Option<AllocationRecord>>("get_latest_record", ())
-    }
-
-    fn start_get_alloc_diagram_data(&self, args: GetAllocDiagramDataArgs) -> GetAllocDiagramDataRx {
-        Self::start_request::<GetAllocDiagramDataArgs, AllocationDiagramData>(
-            "get_alloc_diagram_data",
-            args,
-        )
-    }
-
-    fn start_add_asset(&self, args: AddAssetArgs) -> AddAssetRx {
-        Self::start_request::<AddAssetArgs, ()>("add_asset", args)
-    }
+    call_macro_with_request_list!(implement_requests);
 }
