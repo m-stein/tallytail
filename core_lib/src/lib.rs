@@ -8,6 +8,11 @@ pub mod request_list;
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter, EnumString};
 
+pub use crate::add_asset_args::{AddAssetArgs, CategoryAssignmentPc};
+pub use crate::allocation_diagram_data::AllocationDiagramData;
+pub use crate::allocation_record_input::AllocationPositionInput;
+pub use crate::category::Category;
+
 pub const APP_NAME: &str = "Asset Allocation Tracker";
 
 #[derive(

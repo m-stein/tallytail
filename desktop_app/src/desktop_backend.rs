@@ -1,6 +1,4 @@
-use core_lib::{
-    GetAllocDiagramDataArgs, add_asset_args::AddAssetArgs, call_macro_with_request_list,
-};
+use core_lib::call_macro_with_request_list;
 use ui_lib::app_backend::AppBackend;
 
 macro_rules! implement_requests {

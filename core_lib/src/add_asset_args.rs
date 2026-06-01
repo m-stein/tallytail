@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
-pub struct CategoryAssignment {
+pub struct CategoryAssignmentPc {
     pub value_id: Option<i64>,
     pub percentage: f64,
 }
@@ -12,7 +12,7 @@ pub struct CategoryAssignment {
 pub struct AddAssetArgs {
     pub name: String,
     pub reference: AssetReference,
-    pub category_id_to_assignment: HashMap<i64, Vec<CategoryAssignment>>,
+    pub category_id_to_assignment: HashMap<i64, Vec<CategoryAssignmentPc>>,
 }
 
 impl Default for AddAssetArgs {

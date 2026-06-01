@@ -3,17 +3,14 @@ use crate::app_backend::{
 };
 use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
 use crate::png::load_png_texture_from_bytes;
-use core_lib::add_asset_args::{AddAssetArgs, CategoryAssignment};
-use core_lib::allocation_record_input::AllocationPositionInput;
 use core_lib::{
-    AllocationRecord, allocation_diagram_data::AllocationDiagramData, category::Category,
+    AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
+    AssetReferenceType, Category, CategoryAssignmentPc, GetAllocDiagramDataArgs,
 };
-use core_lib::{AssetReferenceType, GetAllocDiagramDataArgs};
 use eframe::egui;
 use egui::TextWrapMode;
 use egui_extras::DatePickerButton;
-use jiff::Zoned;
-use jiff::civil::Date;
+use jiff::{Zoned, civil::Date};
 use std::collections::HashMap;
 use strum::IntoEnumIterator;
 
@@ -421,7 +418,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                             )
                             .clicked()
                     {
-                        assignments.push(CategoryAssignment {
+                        assignments.push(CategoryAssignmentPc {
                             percentage: if assignments.is_empty() { 100. } else { 0. },
                             value_id: None,
                         });

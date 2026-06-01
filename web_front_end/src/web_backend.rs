@@ -1,8 +1,4 @@
-use core_lib::{
-    AllocationRecord, Asset, GetAllocDiagramDataArgs, add_asset_args::AddAssetArgs,
-    allocation_diagram_data::AllocationDiagramData, call_macro_with_request_list,
-    category::Category,
-};
+use core_lib::call_macro_with_request_list;
 use eyre::eyre;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::mpsc;
@@ -10,11 +6,12 @@ use ui_lib::app_backend::AppBackend;
 
 macro_rules! implement_requests {
 
-    // For each request, redirect to one of the @handler arms depending on whether
+    // For each request, redirect to one of the @func arms depending on whether
     // the request has an argument or not
     ($($request:ident($($arg_ty:ty)?) -> $ret_ty:ty;)*) => {
         $(implement_requests!(@func $request ($($arg_ty)?) -> $ret_ty);)*
     };
+    // Start-request function-template for requests without an argument
     (@func $request:ident () -> $ret_ty:ty) => {
         paste::paste! {
             fn [<start_ $request>](&self) -> ui_lib::app_backend::[<$request:camel Rx>] {
@@ -22,6 +19,7 @@ macro_rules! implement_requests {
             }
         }
     };
+    // Start-request function-template for requests with one argument
     (@func $request:ident ($arg_ty:ty) -> $ret_ty:ty) => {
         paste::paste! {
             fn [<start_ $request>](&self, args: $arg_ty) -> ui_lib::app_backend::[<$request:camel Rx>] {
