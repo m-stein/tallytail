@@ -1,5 +1,6 @@
 use crate::app_backend::{
     AddAssetRx, AppBackend, GetAllocDiagramDataRx, GetAssetsRx, GetCategoriesRx, GetLatestRecordRx,
+    LoadPngDataRx,
 };
 use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
 use crate::png::load_png_texture_from_bytes;
@@ -48,10 +49,11 @@ pub struct EframeApp<B: AppBackend> {
     get_categories_rx: Option<GetCategoriesRx>,
     get_assets_rx: Option<GetAssetsRx>,
     add_asset_rx: Option<AddAssetRx>,
+    load_png_data_rx: Option<LoadPngDataRx>,
 
     page: Page,
 
-    squirrel_texture: egui::TextureHandle,
+    squirrel_texture: Option<egui::TextureHandle>,
 }
 
 impl<BACKEND: AppBackend> EframeApp<BACKEND> {
@@ -63,17 +65,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     const SPACE_3: f32 = 24.0;
     const DEFAULT_INPUT_HEIGHT: f32 = 19.0;
     const SYM_BTN_SIZE: f32 = Self::DEFAULT_INPUT_HEIGHT;
+    const SQUIRREL_IMG_PATH: &str = "img/squirrel_68x68.png";
 
-    pub fn new(creat_ctx: &eframe::CreationContext<'_>, backend: BACKEND) -> eyre::Result<Self> {
-        let squirrel_path = "img/squirrel_68x68.png";
-        let squirrel_texture = load_png_texture_from_bytes(
-            &creat_ctx.egui_ctx,
-            squirrel_path,
-            backend.load_png_file(squirrel_path)?,
-        )?;
+    pub fn new(backend: BACKEND) -> eyre::Result<Self> {
         let mut app = Self {
             backend,
-            squirrel_texture,
+            squirrel_texture: None,
             page: Page::AllocationDiagram,
             allocation_record_date: Zoned::now().date(),
             allocation_record_assets: Vec::new(),
@@ -90,7 +87,9 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             get_assets_rx: None,
             get_latest_record_rx: None,
             add_asset_rx: None,
+            load_png_data_rx: None,
         };
+        app.start_load_png_data(Self::SQUIRREL_IMG_PATH.to_string());
         app.start_get_categories();
         app.start_get_latest_record();
         Ok(app)
@@ -106,6 +105,30 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
     fn incr_pending_req_cnt(&mut self) {
         self.pending_req_cnt += 1;
+    }
+
+    fn poll_load_png_data_rx(&mut self, egui_ctx: &egui::Context) {
+        if let Some(rx) = &self.load_png_data_rx
+            && let Ok(result) = rx.try_recv()
+        {
+            match result {
+                Ok(data) => {
+                    match load_png_texture_from_bytes(egui_ctx, Self::SQUIRREL_IMG_PATH, data) {
+                        Ok(texture) => {
+                            self.squirrel_texture = Some(texture);
+                        }
+                        Err(e) => {
+                            self.message = Some(e.to_string());
+                        }
+                    }
+                }
+                Err(error) => {
+                    self.message = Some(error.to_string());
+                }
+            }
+            self.load_png_data_rx = None;
+            self.decr_pending_req_cnt();
+        }
     }
 
     fn poll_get_categories_rx(&mut self) {
@@ -208,6 +231,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     fn start_get_categories(&mut self) {
         self.message = None;
         self.get_categories_rx = Some(self.backend.start_get_categories());
+        self.incr_pending_req_cnt();
+    }
+
+    fn start_load_png_data(&mut self, path: String) {
+        self.message = None;
+        self.load_png_data_rx = Some(self.backend.start_load_png_data(path));
         self.incr_pending_req_cnt();
     }
 
@@ -563,6 +592,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     }
 
     fn show_content(&mut self, ui: &mut egui::Ui) {
+        self.poll_load_png_data_rx(ui.ctx());
         self.poll_get_categories_rx();
         self.poll_get_assets_rx();
         self.poll_get_latest_record_rx();
@@ -571,7 +601,9 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
         ui.add_space(Self::SPACE_2);
         ui.horizontal(|ui| {
-            ui.image((self.squirrel_texture.id(), egui::vec2(68.0, 68.0)));
+            if let Some(texture) = &self.squirrel_texture {
+                ui.image((texture.id(), egui::vec2(68.0, 68.0)));
+            }
             ui.add_space(Self::SPACE_2);
             ui.label(
                 egui::RichText::new("Asset Allocation Tracker")

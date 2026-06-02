@@ -42,8 +42,5 @@ macro_rules! implement_requests {
 pub struct DesktopBackend;
 
 impl AppBackend for DesktopBackend {
-    fn load_png_file(&self, path: &str) -> eyre::Result<Vec<u8>> {
-        Ok(std::fs::read(format!("../{path}"))?)
-    }
     call_macro_with_request_list!(implement_requests);
 }

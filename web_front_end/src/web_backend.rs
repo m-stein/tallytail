@@ -1,5 +1,4 @@
 use core_lib::call_macro_with_request_list;
-use eyre::eyre;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::mpsc;
 use ui_lib::app_backend::AppBackend;
@@ -72,15 +71,5 @@ impl WebBackend {
 }
 
 impl AppBackend for WebBackend {
-    fn load_png_file(&self, path: &str) -> eyre::Result<Vec<u8>> {
-        let bytes: &[u8] = match path {
-            "img/squirrel_68x68.png" => {
-                include_bytes!("../../img/squirrel_68x68.png")
-            }
-            _ => return Err(eyre!("unknown embedded asset path: {path}")),
-        };
-
-        Ok(bytes.into())
-    }
     call_macro_with_request_list!(implement_requests);
 }

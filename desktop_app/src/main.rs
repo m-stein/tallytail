@@ -18,7 +18,7 @@ fn main() -> eyre::Result<()> {
     run_native(
         APP_NAME,
         options,
-        Box::new(|cc| Ok(Box::new(EframeApp::new(cc, DesktopBackend)?))),
+        Box::new(|_| Ok(Box::new(EframeApp::new(DesktopBackend)?))),
     )?;
     Ok(())
 }

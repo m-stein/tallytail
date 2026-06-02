@@ -18,7 +18,7 @@ pub async fn start() -> eyre::Result<(), wasm_bindgen::JsValue> {
         .start(
             canvas,
             eframe::WebOptions::default(),
-            Box::new(|cc| Ok(Box::new(EframeApp::new(cc, WebBackend)?))),
+            Box::new(|_| Ok(Box::new(EframeApp::new(WebBackend)?))),
         )
         .await
 }

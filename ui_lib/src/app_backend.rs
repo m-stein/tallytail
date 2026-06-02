@@ -7,7 +7,6 @@ macro_rules! define_app_backend {
             $(pub type [<$request:camel Rx>] = Receiver<eyre::Result<$ret_ty>>;)*
 
             pub trait AppBackend {
-                fn load_png_file(&self, path: &str) -> eyre::Result<Vec<u8>>;
                 $(define_app_backend!(@method $request ($($arg_ty)?) -> $ret_ty);)*
             }
         }

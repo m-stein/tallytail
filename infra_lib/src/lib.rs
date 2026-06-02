@@ -20,6 +20,10 @@ pub fn get_alloc_diagram_data(
     Ok(AllocationDiagramData::new(records, &category_name))
 }
 
+pub fn load_png_data(path: String) -> eyre::Result<Vec<u8>> {
+    Ok(std::fs::read(format!("../{path}"))?)
+}
+
 pub fn add_asset(args: AddAssetArgs) -> eyre::Result<()> {
     let name = args.name.trim();
     if name.is_empty() {

@@ -1,4 +1,4 @@
-Last added: T29
+Last added: T31
 
 Open
 ####
@@ -40,6 +40,14 @@ T28: Move all core logic from infra lib to core lib (e.g. add_asset)
 T29: Second attempt to make the app remotely usable via web frontend.
      Starts the entire project anew as a workspace with several crates.
      Then, step by step, re-applies the features of the previous state
+
+T30: The backend implementation of the load_png_data request
+     must restrict access to a set of allowed file names.
+     Otherwise users could read the content of any server file
+
+T31: Improve name of load_png_data request to, e.g., get_file_content
+
+T32: Reduce redundancy of start_* and poll_* methods in EframeApp
 
 
 Closed
