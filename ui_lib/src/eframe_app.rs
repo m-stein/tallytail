@@ -1,19 +1,83 @@
-use crate::app_backend::{
-    AddAssetRx, AppBackend, GetAllocDiagramDataRx, GetAssetsRx, GetCategoriesRx, GetLatestRecordRx,
-    LoadPngDataRx,
-};
+use crate::app_backend::AppBackend;
 use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
 use crate::png::load_png_texture_from_bytes;
 use core_lib::{
     AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
     AssetReferenceType, Category, CategoryAssignmentPc, GetAllocDiagramDataArgs,
+    call_macro_with_request_list,
 };
 use eframe::egui;
 use egui::TextWrapMode;
 use egui_extras::DatePickerButton;
 use jiff::{Zoned, civil::Date};
 use std::collections::HashMap;
+use std::sync::mpsc::Receiver;
 use strum::IntoEnumIterator;
+
+macro_rules! define_request_data {
+    ($($request:ident($($arg_ty:ty)?) -> $ret_ty:ty;)*) => {
+        paste::paste! {
+            #[derive(Default)]
+            struct RequestData {
+                $([<$request _rx>]: Option<Receiver<eyre::Result<$ret_ty>>>,)*
+            }
+        }
+    }
+}
+
+call_macro_with_request_list!(define_request_data);
+
+macro_rules! implement_requests {
+
+    // For each request, redirect to one of the @func arms depending on whether
+    // the request has an argument or not
+    ($($request:ident($($arg_ty:ty)?) -> $ret_ty:ty;)*) => {
+        $(
+            implement_requests!(@start_req_fn $request ($($arg_ty)?) -> $ret_ty);
+            paste::paste! {
+                fn [<poll_ $request _rx>](&mut self) -> Option<$ret_ty> {
+                    let mut res: Option<$ret_ty> = None;
+                    if let Some(rx) = &self.request_data.[<$request _rx>]
+                        && let Ok(result) = rx.try_recv()
+                    {
+                        match result {
+                            Ok(result) => {
+                                self.message = None;
+                                res = Some(result);
+                            }
+                            Err(error) => {
+                                self.message = Some(error.to_string());
+                            }
+                        }
+                        self.request_data.[<$request _rx>] = None;
+                        self.decr_pending_req_cnt();
+                    }
+                    res
+                }
+            }
+        )*
+    };
+    // Start-request function-template for requests without an argument
+    (@start_req_fn $request:ident () -> $ret_ty:ty) => {
+        paste::paste! {
+            fn [<start_ $request>](&mut self) {
+                self.message = None;
+                self.request_data.[<$request _rx>] = Some(self.backend.[<start_ $request>]());
+                self.incr_pending_req_cnt();
+            }
+        }
+    };
+    // Start-request function-template for requests with one argument
+    (@start_req_fn $request:ident ($arg_ty:ty) -> $ret_ty:ty) => {
+        paste::paste! {
+            fn [<start_ $request>](&mut self, arg: $arg_ty) {
+                self.message = None;
+                self.request_data.[<$request _rx>] = Some(self.backend.[<start_ $request>](arg));
+                self.incr_pending_req_cnt();
+            }
+        }
+    };
+}
 
 #[derive(PartialEq)]
 enum Page {
@@ -34,7 +98,6 @@ pub struct EframeApp<B: AppBackend> {
     backend: B,
     message: Option<String>,
     pending_req_cnt: usize,
-
     asset_name_by_id: HashMap<i64, String>,
     allocation_record_date: Date,
     allocation_record_assets: Vec<PositionItem>,
@@ -43,16 +106,8 @@ pub struct EframeApp<B: AppBackend> {
     latest_record: Option<AllocationRecord>,
     categories: Vec<Category>,
     add_asset_args: AddAssetArgs,
-
-    get_latest_record_rx: Option<GetLatestRecordRx>,
-    get_alloc_diagram_data_rx: Option<GetAllocDiagramDataRx>,
-    get_categories_rx: Option<GetCategoriesRx>,
-    get_assets_rx: Option<GetAssetsRx>,
-    add_asset_rx: Option<AddAssetRx>,
-    load_png_data_rx: Option<LoadPngDataRx>,
-
+    request_data: RequestData,
     page: Page,
-
     squirrel_texture: Option<egui::TextureHandle>,
 }
 
@@ -71,6 +126,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         let mut app = Self {
             backend,
             squirrel_texture: None,
+            request_data: RequestData::default(),
             page: Page::AllocationDiagram,
             allocation_record_date: Zoned::now().date(),
             allocation_record_assets: Vec::new(),
@@ -82,18 +138,14 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             pending_req_cnt: 0,
             latest_record: None,
             add_asset_args: AddAssetArgs::default(),
-            get_alloc_diagram_data_rx: None,
-            get_categories_rx: None,
-            get_assets_rx: None,
-            get_latest_record_rx: None,
-            add_asset_rx: None,
-            load_png_data_rx: None,
         };
         app.start_load_png_data(Self::SQUIRREL_IMG_PATH.to_string());
         app.start_get_categories();
         app.start_get_latest_record();
         Ok(app)
     }
+
+    call_macro_with_request_list!(implement_requests);
 
     fn decr_pending_req_cnt(&mut self) {
         if self.pending_req_cnt > 0 {
@@ -105,172 +157,6 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
     fn incr_pending_req_cnt(&mut self) {
         self.pending_req_cnt += 1;
-    }
-
-    fn poll_load_png_data_rx(&mut self, egui_ctx: &egui::Context) {
-        if let Some(rx) = &self.load_png_data_rx
-            && let Ok(result) = rx.try_recv()
-        {
-            match result {
-                Ok(data) => {
-                    match load_png_texture_from_bytes(egui_ctx, Self::SQUIRREL_IMG_PATH, data) {
-                        Ok(texture) => {
-                            self.squirrel_texture = Some(texture);
-                        }
-                        Err(e) => {
-                            self.message = Some(e.to_string());
-                        }
-                    }
-                }
-                Err(error) => {
-                    self.message = Some(error.to_string());
-                }
-            }
-            self.load_png_data_rx = None;
-            self.decr_pending_req_cnt();
-        }
-    }
-
-    fn poll_get_categories_rx(&mut self) {
-        if let Some(rx) = &self.get_categories_rx
-            && let Ok(result) = rx.try_recv()
-        {
-            match result {
-                Ok(categories) => {
-                    self.categories = categories;
-                    self.message = None;
-                }
-                Err(error) => {
-                    self.message = Some(error.to_string());
-                }
-            }
-            self.get_categories_rx = None;
-            self.decr_pending_req_cnt();
-        }
-    }
-
-    fn poll_get_assets_rx(&mut self) {
-        if let Some(rx) = &self.get_assets_rx
-            && let Ok(result) = rx.try_recv()
-        {
-            match result {
-                Ok(assets) => {
-                    self.asset_name_by_id.clear();
-                    self.allocation_record_assets.clear();
-
-                    for asset in assets {
-                        self.asset_name_by_id.insert(asset.id, asset.name.clone());
-
-                        self.allocation_record_assets.push(PositionItem {
-                            asset_id: asset.id,
-                            label: format!("{} ({})", asset.name, asset.reference.value),
-                            amount: String::new(),
-                        });
-                    }
-                    self.message = None;
-                }
-                Err(error) => {
-                    self.message = Some(error.to_string());
-                }
-            }
-            self.get_assets_rx = None;
-            self.decr_pending_req_cnt();
-        }
-    }
-
-    fn poll_get_latest_record_rx(&mut self) {
-        if let Some(rx) = &self.get_latest_record_rx
-            && let Ok(result) = rx.try_recv()
-        {
-            match result {
-                Ok(latest_record) => {
-                    self.latest_record = latest_record;
-                    self.message = None;
-                }
-                Err(error) => {
-                    self.latest_record = None;
-                    self.message = Some(error.to_string());
-                }
-            }
-            self.get_latest_record_rx = None;
-            self.decr_pending_req_cnt();
-        }
-    }
-
-    fn poll_get_alloc_diagram_data_rx(&mut self) {
-        if let Some(rx) = &self.get_alloc_diagram_data_rx
-            && let Ok(result) = rx.try_recv()
-        {
-            match result {
-                Ok(alloc_diagram_data) => {
-                    self.alloc_diagram_data = Some(alloc_diagram_data);
-                    self.message = None;
-                }
-                Err(error) => {
-                    self.alloc_diagram_data = None;
-                    self.message = Some(error.to_string());
-                }
-            }
-            self.get_latest_record_rx = None;
-            self.decr_pending_req_cnt();
-        }
-    }
-
-    fn poll_add_asset_rx(&mut self) {
-        if let Some(rx) = &self.add_asset_rx
-            && let Ok(result) = rx.try_recv()
-        {
-            if let Err(error) = result {
-                self.message = Some(error.to_string());
-            }
-            self.add_asset_rx = None;
-            self.decr_pending_req_cnt();
-        }
-    }
-
-    fn start_get_categories(&mut self) {
-        self.message = None;
-        self.get_categories_rx = Some(self.backend.start_get_categories());
-        self.incr_pending_req_cnt();
-    }
-
-    fn start_load_png_data(&mut self, path: String) {
-        self.message = None;
-        self.load_png_data_rx = Some(self.backend.start_load_png_data(path));
-        self.incr_pending_req_cnt();
-    }
-
-    fn start_get_assets(&mut self) {
-        self.message = None;
-        self.get_assets_rx = Some(self.backend.start_get_assets());
-        self.incr_pending_req_cnt();
-    }
-
-    fn start_get_latest_record(&mut self) {
-        self.message = None;
-        self.get_latest_record_rx = Some(self.backend.start_get_latest_record());
-        self.incr_pending_req_cnt();
-    }
-
-    fn start_get_alloc_diagram_data(&mut self) {
-        if let Some(category_id) = self.alloc_diagram_category_id {
-            self.message = None;
-            self.get_alloc_diagram_data_rx = Some(self.backend.start_get_alloc_diagram_data(
-                GetAllocDiagramDataArgs {
-                    category_id,
-                    days: 5,
-                },
-            ));
-            self.incr_pending_req_cnt();
-        } else {
-            self.alloc_diagram_data = None;
-        }
-    }
-
-    fn start_add_asset(&mut self) {
-        self.add_asset_rx = Some(self.backend.start_add_asset(self.add_asset_args.clone()));
-        self.reset_add_asset_page();
-        self.incr_pending_req_cnt();
     }
 
     fn allocation_diagram_category_selected_text(&self) -> &str {
@@ -309,7 +195,14 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         ui.add_space(Self::SPACE_2);
 
         if prev_category_id != self.alloc_diagram_category_id {
-            self.start_get_alloc_diagram_data();
+            if let Some(category_id) = self.alloc_diagram_category_id {
+                self.start_get_alloc_diagram_data(GetAllocDiagramDataArgs {
+                    category_id,
+                    days: 5,
+                });
+            } else {
+                self.alloc_diagram_data = None;
+            }
             self.start_get_latest_record();
         }
         if let Some(data) = self.alloc_diagram_data.as_ref() {
@@ -503,7 +396,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         });
         ui.add_space(Self::SPACE_2);
         if ui.button("Save").clicked() {
-            self.start_add_asset();
+            self.start_add_asset(self.add_asset_args.clone());
         }
     }
 
@@ -591,14 +484,43 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         }
     }
 
-    fn show_content(&mut self, ui: &mut egui::Ui) {
-        self.poll_load_png_data_rx(ui.ctx());
-        self.poll_get_categories_rx();
-        self.poll_get_assets_rx();
-        self.poll_get_latest_record_rx();
-        self.poll_get_alloc_diagram_data_rx();
+    fn poll_request_receivers(&mut self, ui: &mut egui::Ui) {
+        if let Some(data) = self.poll_load_png_data_rx() {
+            match load_png_texture_from_bytes(ui.ctx(), Self::SQUIRREL_IMG_PATH, data) {
+                Ok(texture) => {
+                    self.squirrel_texture = Some(texture);
+                }
+                Err(err) => {
+                    self.squirrel_texture = None;
+                    self.message = Some(err.to_string());
+                }
+            }
+        }
+        if let Some(categories) = self.poll_get_categories_rx() {
+            self.categories = categories;
+        }
+        if let Some(assets) = self.poll_get_assets_rx() {
+            self.asset_name_by_id.clear();
+            self.allocation_record_assets.clear();
+            for asset in assets {
+                self.asset_name_by_id.insert(asset.id, asset.name.clone());
+                self.allocation_record_assets.push(PositionItem {
+                    asset_id: asset.id,
+                    label: format!("{} ({})", asset.name, asset.reference.value),
+                    amount: String::new(),
+                });
+            }
+        }
+        if let Some(record) = self.poll_get_latest_record_rx() {
+            self.latest_record = record;
+        }
+        if let Some(data) = self.poll_get_alloc_diagram_data_rx() {
+            self.alloc_diagram_data = Some(data);
+        }
         self.poll_add_asset_rx();
+    }
 
+    fn show_content(&mut self, ui: &mut egui::Ui) {
         ui.add_space(Self::SPACE_2);
         ui.horizontal(|ui| {
             if let Some(texture) = &self.squirrel_texture {
@@ -659,6 +581,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
 impl<B: AppBackend> eframe::App for EframeApp<B> {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.poll_request_receivers(ui);
         ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::ScrollArea::both()

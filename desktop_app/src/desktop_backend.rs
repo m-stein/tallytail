@@ -1,4 +1,6 @@
 use core_lib::call_macro_with_request_list;
+use std::sync::mpsc::{Receiver, channel};
+use std::thread;
 use ui_lib::app_backend::AppBackend;
 
 macro_rules! implement_requests {
@@ -13,9 +15,9 @@ macro_rules! implement_requests {
     // Request handler template for requests without arguments
     (@handler $request:ident () -> $ret_ty:ty) => {
         paste::paste! {
-            fn [<start_ $request>](&self) -> ui_lib::app_backend::[<$request:camel Rx>] {
-                let (tx, rx) = std::sync::mpsc::channel();
-                std::thread::spawn(move || {
+            fn [<start_ $request>](&self) -> Receiver<eyre::Result<$ret_ty>> {
+                let (tx, rx) = channel();
+                thread::spawn(move || {
                     let _ = tx.send(infra_lib::$request());
                 });
                 rx
@@ -25,12 +27,9 @@ macro_rules! implement_requests {
     // Request handler template for requests with one argument
     (@handler $request:ident ($arg_ty:ty) -> $ret_ty:ty) => {
         paste::paste! {
-            fn [<start_ $request>](
-                &self,
-                args: $arg_ty,
-            ) -> ui_lib::app_backend::[<$request:camel Rx>] {
-                let (tx, rx) = std::sync::mpsc::channel();
-                std::thread::spawn(move || {
+            fn [<start_ $request>](&self, args: $arg_ty) -> Receiver<eyre::Result<$ret_ty>> {
+                let (tx, rx) = channel();
+                thread::spawn(move || {
                     let _ = tx.send(infra_lib::$request(args));
                 });
                 rx

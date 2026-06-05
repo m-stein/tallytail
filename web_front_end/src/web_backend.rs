@@ -1,6 +1,6 @@
 use core_lib::call_macro_with_request_list;
 use serde::{Serialize, de::DeserializeOwned};
-use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, channel};
 use ui_lib::app_backend::AppBackend;
 
 macro_rules! implement_requests {
@@ -13,7 +13,7 @@ macro_rules! implement_requests {
     // Start-request function-template for requests without an argument
     (@func $request:ident () -> $ret_ty:ty) => {
         paste::paste! {
-            fn [<start_ $request>](&self) -> ui_lib::app_backend::[<$request:camel Rx>] {
+            fn [<start_ $request>](&self) -> Receiver<eyre::Result<$ret_ty>> {
                 Self::start_request::<(), $ret_ty>(stringify!($request), ())
             }
         }
@@ -21,7 +21,7 @@ macro_rules! implement_requests {
     // Start-request function-template for requests with one argument
     (@func $request:ident ($arg_ty:ty) -> $ret_ty:ty) => {
         paste::paste! {
-            fn [<start_ $request>](&self, args: $arg_ty) -> ui_lib::app_backend::[<$request:camel Rx>] {
+            fn [<start_ $request>](&self, args: $arg_ty) -> Receiver<eyre::Result<$ret_ty>> {
                 Self::start_request::<$arg_ty, $ret_ty>(stringify!($request), args)
             }
         }
@@ -52,15 +52,12 @@ impl WebBackend {
             .await?)
     }
 
-    fn start_request<Args, Ret>(
-        request: &'static str,
-        args: Args,
-    ) -> mpsc::Receiver<eyre::Result<Ret>>
+    fn start_request<Args, Ret>(request: &'static str, args: Args) -> Receiver<eyre::Result<Ret>>
     where
         Args: Serialize + 'static,
         Ret: DeserializeOwned + 'static,
     {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = channel();
         wasm_bindgen_futures::spawn_local(async move {
             let result = Self::post::<Args, Ret>(request, args).await;
             let _ = tx.send(result);
