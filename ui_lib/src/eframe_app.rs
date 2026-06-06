@@ -413,12 +413,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         );
         ui.add_space(Self::SPACE_2);
         if ui.button("Save").clicked() {
-            /*
-            self.save_configured_categories();
-            if let Err(e) = self.reload_existing_catgs_and_catg_values() {
-                self.message = Some(e.to_string());
-            }
-            */
+            self.start_configure_categories(self.cfg_catgs_input.clone());
         }
         ui.add_space(Self::SPACE_2);
         let mut focus_next_catg_input = false;
@@ -705,6 +700,15 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         }
         if let Some(data) = self.poll_get_alloc_diagram_data_rx() {
             self.alloc_diagram_data = Some(data);
+        }
+        if let Some((categories, err)) = self.poll_configure_categories_rx() {
+            if let Some(err) = err {
+                self.message = Some(format!("Partial save. First error: {}", err));
+            } else {
+                self.message = Some("All saved".into());
+            }
+            self.cfg_catgs_input = categories;
+            self.start_get_categories();
         }
         self.poll_add_asset_rx();
     }

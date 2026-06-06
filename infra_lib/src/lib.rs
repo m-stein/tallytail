@@ -1,8 +1,8 @@
 use core_lib::{
-    AllocationRecord, Asset, AssetReference, AssetReferenceType, CategoryAssignment,
-    GetAllocDiagramDataArgs, add_asset_args::AddAssetArgs,
-    allocation_diagram_data::AllocationDiagramData, category::Category,
-    category_value::CategoryValue,
+    AdaptCategoryInput, AllocationRecord, Asset, AssetReference, AssetReferenceType,
+    CategoryAssignment, ConfigureCatgoriesInput, GetAllocDiagramDataArgs, NewCategoryInput,
+    add_asset_args::AddAssetArgs, allocation_diagram_data::AllocationDiagramData,
+    category::Category, category_value::CategoryValue,
 };
 use eyre::eyre;
 use rusqlite::{params, types::FromSqlError};
@@ -213,4 +213,108 @@ fn get_category_name_by_id(category_id: i64) -> eyre::Result<String> {
         rusqlite::params![category_id],
         |row| row.get(0),
     )?)
+}
+
+fn add_category_value(category_id: i64, value_name: &str) -> eyre::Result<()> {
+    let connection = rusqlite::Connection::open("../data/assets.sdb")?;
+    connection.execute(
+        "INSERT INTO asset_category_values (asset_category_id, name)
+        VALUES (?1, ?2)",
+        rusqlite::params![category_id, value_name],
+    )?;
+    Ok(())
+}
+
+fn add_category(name: &str) -> eyre::Result<i64> {
+    let connection = rusqlite::Connection::open("../data/assets.sdb")?;
+    connection.execute(
+        "INSERT INTO asset_categories (name) VALUES (?1)",
+        params![name],
+    )?;
+    Ok(connection.last_insert_rowid())
+}
+
+pub fn configure_categories(
+    input: ConfigureCatgoriesInput,
+) -> eyre::Result<(ConfigureCatgoriesInput, Option<String>)> {
+    let mut remaining = ConfigureCatgoriesInput::default();
+    let mut first_error: Option<String> = None;
+
+    // Neue Kategorien + deren neue Values
+    for new_category in input.new_category_inputs {
+        let category_name = new_category.name.trim();
+
+        if category_name.is_empty() {
+            remaining.new_category_inputs.push(new_category);
+            continue;
+        }
+
+        match add_category(category_name) {
+            Ok(category_id) => {
+                let mut remaining_values = Vec::new();
+
+                for value_input in new_category.new_value_inputs {
+                    let value_name = value_input.name.trim();
+
+                    if value_name.is_empty() {
+                        remaining_values.push(value_input);
+                        continue;
+                    }
+
+                    if let Err(err) = add_category_value(category_id, value_name) {
+                        if first_error.is_none() {
+                            first_error = Some(err.to_string());
+                        }
+                        remaining_values.push(value_input);
+                    }
+                }
+
+                if !remaining_values.is_empty() {
+                    remaining.new_category_inputs.push(NewCategoryInput {
+                        name: new_category.name,
+                        new_value_inputs: remaining_values,
+                    });
+                }
+            }
+            Err(err) => {
+                if first_error.is_none() {
+                    first_error = Some(err.to_string());
+                }
+
+                remaining.new_category_inputs.push(new_category);
+            }
+        }
+    }
+
+    // Bestehende Kategorien erweitern
+    for (category_id, adapt_input) in input.category_id_to_adapt_input {
+        let mut remaining_values = Vec::new();
+
+        for value_input in adapt_input.new_value_inputs {
+            let value_name = value_input.name.trim();
+
+            if value_name.is_empty() {
+                remaining_values.push(value_input);
+                continue;
+            }
+
+            if let Err(err) = add_category_value(category_id, value_name) {
+                if first_error.is_none() {
+                    first_error = Some(err.to_string());
+                }
+                remaining_values.push(value_input);
+            }
+        }
+
+        if !remaining_values.is_empty() {
+            remaining.category_id_to_adapt_input.insert(
+                category_id,
+                AdaptCategoryInput {
+                    new_value_inputs: remaining_values,
+                },
+            );
+        }
+    }
+
+    Ok((remaining, first_error))
 }
