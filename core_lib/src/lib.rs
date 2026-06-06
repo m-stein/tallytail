@@ -3,6 +3,7 @@ pub mod allocation_diagram_data;
 pub mod allocation_record_input;
 pub mod category;
 pub mod category_value;
+pub mod configure_categories_input;
 pub mod request_list;
 
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,9 @@ pub use crate::add_asset_args::{AddAssetArgs, CategoryAssignmentPc};
 pub use crate::allocation_diagram_data::AllocationDiagramData;
 pub use crate::allocation_record_input::AllocationPositionInput;
 pub use crate::category::Category;
+pub use crate::configure_categories_input::{
+    AdaptCategoryInput, CategoryValueInput, ConfigureCatgoriesInput, NewCategoryInput,
+};
 
 pub const APP_NAME: &str = "Asset Allocation Tracker";
 

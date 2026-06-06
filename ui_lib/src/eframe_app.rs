@@ -3,7 +3,8 @@ use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
 use crate::png::load_png_texture_from_bytes;
 use core_lib::{
     AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
-    AssetReferenceType, Category, CategoryAssignmentPc, GetAllocDiagramDataArgs,
+    AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
+    ConfigureCatgoriesInput, GetAllocDiagramDataArgs, NewCategoryInput,
     call_macro_with_request_list,
 };
 use eframe::egui;
@@ -106,6 +107,7 @@ pub struct EframeApp<B: AppBackend> {
     latest_record: Option<AllocationRecord>,
     categories: Vec<Category>,
     add_asset_args: AddAssetArgs,
+    cfg_catgs_input: ConfigureCatgoriesInput,
     request_data: RequestData,
     page: Page,
     squirrel_texture: Option<egui::TextureHandle>,
@@ -135,6 +137,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             alloc_diagram_data: None,
             categories: Vec::new(),
             asset_name_by_id: HashMap::new(),
+            cfg_catgs_input: ConfigureCatgoriesInput::default(),
             pending_req_cnt: 0,
             latest_record: None,
             add_asset_args: AddAssetArgs::default(),
@@ -276,6 +279,8 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     }
 
     fn init_configure_categories_page(&mut self) -> eyre::Result<()> {
+        self.start_get_categories();
+        self.message = None;
         Ok(())
     }
 
@@ -400,7 +405,191 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         }
     }
 
-    fn show_configure_categories_page(&mut self, _ui: &mut egui::Ui) {}
+    fn show_configure_categories_page(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("Configure Categories")
+                .heading()
+                .size(Self::H2_SIZE),
+        );
+        ui.add_space(Self::SPACE_2);
+        if ui.button("Save").clicked() {
+            /*
+            self.save_configured_categories();
+            if let Err(e) = self.reload_existing_catgs_and_catg_values() {
+                self.message = Some(e.to_string());
+            }
+            */
+        }
+        ui.add_space(Self::SPACE_2);
+        let mut focus_next_catg_input = false;
+        ui.horizontal(|ui| {
+            if ui
+                .add_sized(
+                    [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
+                    egui::Button::new("+"),
+                )
+                .clicked()
+            {
+                self.cfg_catgs_input
+                    .new_category_inputs
+                    .push(NewCategoryInput::default());
+                focus_next_catg_input = true;
+            }
+            ui.label("Categories:");
+        });
+
+        /* Show inputs for new categories */
+        let mut del_catg_idx: Option<usize> = None;
+        for (catg_idx, catg_input) in self
+            .cfg_catgs_input
+            .new_category_inputs
+            .iter_mut()
+            .enumerate()
+            .rev()
+        {
+            ui.add_space(Self::SPACE_2);
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label("•");
+                    let id = ui.make_persistent_id(("NewCatg", catg_idx));
+                    let response = ui.add(egui::TextEdit::singleline(&mut catg_input.name).id(id));
+                    if focus_next_catg_input {
+                        response.request_focus();
+                        focus_next_catg_input = false;
+                    }
+                    if ui
+                        .add_sized(
+                            [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
+                            egui::Button::new("-"),
+                        )
+                        .clicked()
+                    {
+                        del_catg_idx = Some(catg_idx);
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.add_space(Self::SPACE_3);
+                    ui.vertical(|ui| {
+                        let mut focus_next_val_input = false;
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add_sized(
+                                    [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
+                                    egui::Button::new("+"),
+                                )
+                                .clicked()
+                            {
+                                catg_input
+                                    .new_value_inputs
+                                    .push(CategoryValueInput::default());
+                                focus_next_val_input = true;
+                            }
+                            ui.label("Values:");
+                        });
+
+                        /* Show inputs for new values */
+                        let mut del_val_idx: Option<usize> = None;
+                        for (val_idx, val_input) in
+                            catg_input.new_value_inputs.iter_mut().enumerate().rev()
+                        {
+                            ui.horizontal(|ui| {
+                                ui.label("•");
+                                let id = ui.make_persistent_id(("NewCatgVal", catg_idx, val_idx));
+                                let response =
+                                    ui.add(egui::TextEdit::singleline(&mut val_input.name).id(id));
+                                if focus_next_val_input {
+                                    response.request_focus();
+                                    focus_next_val_input = false;
+                                }
+                                if ui
+                                    .add_sized(
+                                        [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
+                                        egui::Button::new("-"),
+                                    )
+                                    .clicked()
+                                {
+                                    del_val_idx = Some(val_idx);
+                                }
+                            });
+                        }
+                        if let Some(idx) = del_val_idx {
+                            catg_input.new_value_inputs.remove(idx);
+                        }
+                    });
+                });
+            });
+        }
+        if let Some(idx) = del_catg_idx {
+            self.cfg_catgs_input.new_category_inputs.remove(idx);
+        }
+
+        /* Show existing categories */
+        for catg in &self.categories {
+            let catg_input = &mut self
+                .cfg_catgs_input
+                .category_id_to_adapt_input
+                .entry(catg.id)
+                .or_default();
+
+            ui.add_space(Self::SPACE_2);
+            ui.label(format!("• {}", catg.name));
+            ui.horizontal(|ui| {
+                ui.add_space(Self::SPACE_3);
+                ui.vertical(|ui| {
+                    let mut focus_next_val_input = false;
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add_sized(
+                                [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
+                                egui::Button::new("+"),
+                            )
+                            .clicked()
+                        {
+                            catg_input
+                                .new_value_inputs
+                                .push(CategoryValueInput::default());
+                            focus_next_val_input = true;
+                        }
+                        ui.label("Values:");
+                    });
+
+                    /* Show inputs for new values */
+                    let mut del_val_idx: Option<usize> = None;
+                    for (val_idx, val_input) in
+                        catg_input.new_value_inputs.iter_mut().enumerate().rev()
+                    {
+                        ui.horizontal(|ui| {
+                            ui.label("•");
+                            let id = ui.make_persistent_id(("AdaptCatgVal", catg.id, val_idx));
+                            let response =
+                                ui.add(egui::TextEdit::singleline(&mut val_input.name).id(id));
+                            if focus_next_val_input {
+                                response.request_focus();
+                                focus_next_val_input = false;
+                            }
+                            if ui
+                                .add_sized(
+                                    [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
+                                    egui::Button::new("-"),
+                                )
+                                .clicked()
+                            {
+                                del_val_idx = Some(val_idx);
+                            }
+                        });
+                    }
+                    if let Some(idx) = del_val_idx {
+                        catg_input.new_value_inputs.remove(idx);
+                    }
+
+                    /* Show existing values */
+                    for value in &catg.values {
+                        ui.label(format!("• {}", value.name));
+                    }
+                });
+            });
+        }
+    }
 
     fn show_add_allocation_record_page(&mut self, ui: &mut egui::Ui) {
         ui.label(
