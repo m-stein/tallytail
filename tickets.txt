@@ -1,4 +1,4 @@
-Last added: T31
+Last added: T33
 
 Open
 ####
@@ -29,17 +29,9 @@ T23: Discuss whether and how to approach the use case "Modify existing assets"
 
 T24: Discuss whether and how to approach the use case "Remove existing categories or category values"
 
-T26: First attempt to make the app remotely usable via web frontend.
-     Conclusion: The project should be restructured fundamentally for a
-     clean implementation. This will be done in the context of T29
-
 T27: Move infra lib functions to a struct that keeps the SQL connection open
 
 T28: Move all core logic from infra lib to core lib (e.g. add_asset)
-
-T29: Second attempt to make the app remotely usable via web frontend.
-     Starts the entire project anew as a workspace with several crates.
-     Then, step by step, re-applies the features of the previous state
 
 T30: The backend implementation of the load_png_data request
      must restrict access to a set of allowed file names.
@@ -47,7 +39,7 @@ T30: The backend implementation of the load_png_data request
 
 T31: Improve name of load_png_data request to, e.g., get_file_content
 
-T32: Reduce redundancy of start_* and poll_* methods in EframeApp
+T33: Support tracking transactions independently from the allocation records
 
 
 Closed
@@ -85,3 +77,14 @@ T8: Allocation records must remember not only assets but also their values at re
 T6: Allow for adding assets that lack category values and show them as "<not set>" in diagrams
 
 T14: The entire app must be scrollable in case that the content exceeds the main window
+
+T29: Second attempt to make the app remotely usable via web frontend.
+     Starts the entire project anew as a workspace with several crates.
+     Then, step by step, re-applies the features of the previous state
+
+T32: Reduce redundancy of start_* and poll_* methods in EframeApp
+     Achieved in the context of T29.
+
+T26: First attempt to make the app remotely usable via web frontend.
+     Conclusion: The project should be restructured fundamentally for a
+     clean implementation. This will be done in the context of T29

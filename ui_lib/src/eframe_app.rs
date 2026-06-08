@@ -86,12 +86,20 @@ enum Page {
     AddAsset,
     ConfigureCategories,
     AddAllocationRecord,
+    LogTransaction,
 }
 
 pub struct PositionItem {
     pub asset_id: i64,
     pub label: String,
     pub amount: String,
+}
+
+#[derive(Default)]
+pub struct LogTransactionInput {
+    pub isin: String,
+    pub quantity: String,
+    pub price: String,
 }
 
 #[allow(unused)]
@@ -107,6 +115,7 @@ pub struct EframeApp<B: AppBackend> {
     latest_record: Option<AllocationRecord>,
     categories: Vec<Category>,
     add_asset_args: AddAssetArgs,
+    log_transaction_input: LogTransactionInput,
     cfg_catgs_input: ConfigureCatgoriesInput,
     request_data: RequestData,
     page: Page,
@@ -141,6 +150,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             pending_req_cnt: 0,
             latest_record: None,
             add_asset_args: AddAssetArgs::default(),
+            log_transaction_input: LogTransactionInput::default(),
         };
         app.start_load_png_data(Self::SQUIRREL_IMG_PATH.to_string());
         app.start_get_categories();
@@ -288,6 +298,16 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         Ok(())
     }
 
+    fn reset_log_transaction_page(&mut self) {
+        self.log_transaction_input = LogTransactionInput::default();
+    }
+
+    fn init_log_transaction_page(&mut self) -> eyre::Result<()> {
+        self.reset_log_transaction_page();
+        self.message = None;
+        Ok(())
+    }
+
     fn reset_add_asset_page(&mut self) {
         self.add_asset_args = AddAssetArgs::default();
     }
@@ -402,6 +422,36 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         ui.add_space(Self::SPACE_2);
         if ui.button("Save").clicked() {
             self.start_add_asset(self.add_asset_args.clone());
+        }
+    }
+
+    fn show_log_transaction_page(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("Log Transaction")
+                .heading()
+                .size(Self::H2_SIZE),
+        );
+        ui.add_space(Self::SPACE_2);
+
+        ui.label("ISIN:");
+        ui.text_edit_singleline(&mut self.log_transaction_input.isin);
+        ui.add_space(Self::SPACE_2);
+
+        ui.label("Quantity:");
+        ui.text_edit_singleline(&mut self.log_transaction_input.quantity);
+        ui.add_space(Self::SPACE_2);
+
+        ui.label("Price:");
+        ui.text_edit_singleline(&mut self.log_transaction_input.price);
+        ui.add_space(Self::SPACE_2);
+
+        if ui.button("Save").clicked() {
+            println!(
+                "Log Transaction: ISIN='{}', Quantity='{}', Price='{}'",
+                self.log_transaction_input.isin,
+                self.log_transaction_input.quantity,
+                self.log_transaction_input.price,
+            );
         }
     }
 
@@ -748,6 +798,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     "Add Allocation Record",
                     Self::init_add_allocation_record_page,
                 );
+                self.show_page_button(
+                    ui,
+                    Page::LogTransaction,
+                    "Log Transaction",
+                    Self::init_log_transaction_page,
+                );
             });
             ui.add_space(20.0);
             ui.vertical(|ui| {
@@ -759,6 +815,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                         Page::AllocationDiagram => self.show_allocation_diagram_page(ui),
                         Page::ConfigureCategories => self.show_configure_categories_page(ui),
                         Page::AddAllocationRecord => self.show_add_allocation_record_page(ui),
+                        Page::LogTransaction => self.show_log_transaction_page(ui),
                     }
                 }
                 ui.add_space(20.0);
