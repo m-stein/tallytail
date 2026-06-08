@@ -39,7 +39,7 @@ T30: The backend implementation of the load_png_data request
 
 T31: Improve name of load_png_data request to, e.g., get_file_content
 
-T33: Support tracking transactions independently from the allocation records
+T32: Support tracking transactions independently from the allocation records
 
 
 Closed
@@ -82,7 +82,7 @@ T29: Second attempt to make the app remotely usable via web frontend.
      Starts the entire project anew as a workspace with several crates.
      Then, step by step, re-applies the features of the previous state
 
-T32: Reduce redundancy of start_* and poll_* methods in EframeApp
+T33: Reduce redundancy of start_* and poll_* methods in EframeApp
      Achieved in the context of T29.
 
 T26: First attempt to make the app remotely usable via web frontend.

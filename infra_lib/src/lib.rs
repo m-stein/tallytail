@@ -2,7 +2,7 @@ use core_lib::{
     AdaptCategoryInput, AllocationRecord, Asset, AssetReference, AssetReferenceType,
     CategoryAssignment, ConfigureCatgoriesInput, GetAllocDiagramDataArgs, NewCategoryInput,
     add_asset_args::AddAssetArgs, allocation_diagram_data::AllocationDiagramData,
-    category::Category, category_value::CategoryValue,
+    category::Category, category_value::CategoryValue, log_transaction_input::LogTransactionInput,
 };
 use eyre::eyre;
 use rusqlite::{params, types::FromSqlError};
@@ -63,6 +63,14 @@ pub fn add_asset(args: AddAssetArgs) -> eyre::Result<()> {
         }
     }
     add_asset_raw(&asset, &catgy_assignms)
+}
+
+pub fn log_transaction(input: LogTransactionInput) -> eyre::Result<()> {
+    println!(
+        "Back-end: Log Transaction: ISIN='{}', Quantity='{}', Price='{}'",
+        input.isin, input.quantity, input.price,
+    );
+    Ok(())
 }
 
 fn add_asset_raw(asset: &Asset, catgy_assignms: &[CategoryAssignment]) -> eyre::Result<()> {

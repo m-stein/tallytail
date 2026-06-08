@@ -7,6 +7,7 @@ macro_rules! call_macro_with_request_list {
             get_latest_record() -> Option<core_lib::AllocationRecord>;
             get_alloc_diagram_data(core_lib::GetAllocDiagramDataArgs) -> core_lib::AllocationDiagramData;
             add_asset(core_lib::AddAssetArgs) -> ();
+            log_transaction(core_lib::LogTransactionInput) -> ();
             load_png_data(String) -> Vec<u8>;
             configure_categories(core_lib::ConfigureCatgoriesInput) -> (core_lib::ConfigureCatgoriesInput, Option<String>);
         }

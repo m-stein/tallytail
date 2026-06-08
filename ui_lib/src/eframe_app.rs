@@ -4,7 +4,7 @@ use crate::png::load_png_texture_from_bytes;
 use core_lib::{
     AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
     AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
-    ConfigureCatgoriesInput, GetAllocDiagramDataArgs, NewCategoryInput,
+    ConfigureCatgoriesInput, GetAllocDiagramDataArgs, LogTransactionInput, NewCategoryInput,
     call_macro_with_request_list,
 };
 use eframe::egui;
@@ -93,13 +93,6 @@ pub struct PositionItem {
     pub asset_id: i64,
     pub label: String,
     pub amount: String,
-}
-
-#[derive(Default)]
-pub struct LogTransactionInput {
-    pub isin: String,
-    pub quantity: String,
-    pub price: String,
 }
 
 #[allow(unused)]
@@ -446,12 +439,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         ui.add_space(Self::SPACE_2);
 
         if ui.button("Save").clicked() {
-            println!(
-                "Log Transaction: ISIN='{}', Quantity='{}', Price='{}'",
-                self.log_transaction_input.isin,
-                self.log_transaction_input.quantity,
-                self.log_transaction_input.price,
-            );
+            self.start_log_transaction(self.log_transaction_input.clone());
         }
     }
 
@@ -761,6 +749,10 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             self.start_get_categories();
         }
         self.poll_add_asset_rx();
+        if self.poll_log_transaction_rx().is_some() {
+            self.message = Some("Transaction logged".into());
+            self.reset_log_transaction_page();
+        }
     }
 
     fn show_content(&mut self, ui: &mut egui::Ui) {
