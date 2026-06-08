@@ -14,14 +14,14 @@ A simple app to track your asset allocation.
 
 ```powershell
 cd dekstop_app
-cargo run --release
+cargo run
 ```
 
 ### Web target
 
 ```powershell
 cd web_back_end
-cargo run --release
+cargo run
 ```
 
 ```powershell
@@ -29,4 +29,10 @@ cd web_front_end
 trunk serve
 ```
 
-Open front end URL in browser
+Then, open the front end URL in a browser.
+
+## Preparing changes for a commit
+
+```powershell
+./precommit.ps1
+```
