@@ -67,8 +67,8 @@ pub fn add_asset(args: AddAssetArgs) -> eyre::Result<()> {
 
 pub fn log_transaction(input: LogTransactionInput) -> eyre::Result<()> {
     println!(
-        "Back-end: Log Transaction: ISIN='{}', Quantity='{}', Stock price='{}', Order value='{}'",
-        input.isin, input.quantity, input.stock_price, input.order_value,
+        "Back-end: Log Transaction: Type='{:?}', ISIN='{}', Quantity='{}', Stock price='{}', Order value='{}'",
+        input.r#type, input.isin, input.quantity, input.stock_price, input.order_value,
     );
     Ok(())
 }

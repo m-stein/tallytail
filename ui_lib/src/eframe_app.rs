@@ -5,7 +5,7 @@ use core_lib::{
     AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
     AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
     ConfigureCatgoriesInput, GetAllocDiagramDataArgs, LogTransactionInput, NewCategoryInput,
-    call_macro_with_request_list,
+    TransactionType, call_macro_with_request_list,
 };
 use eframe::egui;
 use egui::TextWrapMode;
@@ -124,6 +124,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     const SPACE_3: f32 = 24.0;
     const DEFAULT_INPUT_HEIGHT: f32 = 19.0;
     const LOG_TRANSACTION_INPUT_WIDTH: f32 = 150.0;
+    const LOG_TRANSACTION_TYPE_BTN_SIZE: [f32; 2] = [120.0, 36.0];
     const SYM_BTN_SIZE: f32 = Self::DEFAULT_INPUT_HEIGHT;
     const SQUIRREL_IMG_PATH: &str = "img/squirrel_68x68.png";
 
@@ -354,6 +355,23 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         ui.end_row();
     }
 
+    fn show_log_transaction_type_switch(ui: &mut egui::Ui, value: &mut TransactionType) {
+        ui.horizontal(|ui| {
+            ui.add_sized(
+                Self::LOG_TRANSACTION_TYPE_BTN_SIZE,
+                egui::Button::selectable(*value == TransactionType::Buy, "Buy"),
+            )
+            .clicked()
+            .then(|| *value = TransactionType::Buy);
+            ui.add_sized(
+                Self::LOG_TRANSACTION_TYPE_BTN_SIZE,
+                egui::Button::selectable(*value == TransactionType::Sell, "Sell"),
+            )
+            .clicked()
+            .then(|| *value = TransactionType::Sell);
+        });
+    }
+
     fn show_add_asset_page(&mut self, ui: &mut egui::Ui) {
         ui.label(
             egui::RichText::new("Add Asset")
@@ -466,6 +484,9 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 .heading()
                 .size(Self::H2_SIZE),
         );
+        ui.add_space(Self::SPACE_2);
+
+        Self::show_log_transaction_type_switch(ui, &mut self.log_transaction_input.r#type);
         ui.add_space(Self::SPACE_2);
 
         egui::Grid::new("log_transaction_input_grid")
