@@ -123,6 +123,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     const SPACE_2: f32 = 12.0;
     const SPACE_3: f32 = 24.0;
     const DEFAULT_INPUT_HEIGHT: f32 = 19.0;
+    const LOG_TRANSACTION_INPUT_WIDTH: f32 = 150.0;
     const SYM_BTN_SIZE: f32 = Self::DEFAULT_INPUT_HEIGHT;
     const SQUIRREL_IMG_PATH: &str = "img/squirrel_68x68.png";
 
@@ -312,6 +313,47 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         Ok(())
     }
 
+    fn show_help_button(ui: &mut egui::Ui, help_id: &str, help_text: &str) {
+        let response = ui.add_sized(
+            [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
+            egui::Label::new(egui::RichText::new("?").color(ui.visuals().hyperlink_color))
+                .sense(egui::Sense::click()),
+        );
+        egui::Popup::menu(&response)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .width(260.0)
+            .id(ui.make_persistent_id(help_id))
+            .show(|ui| {
+                ui.label(help_text);
+            });
+    }
+
+    fn show_log_transaction_input(
+        ui: &mut egui::Ui,
+        label: &str,
+        value: &mut String,
+        help_text: Option<&str>,
+    ) {
+        ui.label(format!("{label}:"));
+        ui.add_sized(
+            [
+                Self::LOG_TRANSACTION_INPUT_WIDTH,
+                Self::DEFAULT_INPUT_HEIGHT,
+            ],
+            egui::TextEdit::singleline(value),
+        );
+        if let Some(help_text) = help_text {
+            let help_id = format!(
+                "log_transaction_{}_help",
+                label.to_lowercase().replace(' ', "_")
+            );
+            Self::show_help_button(ui, &help_id, help_text);
+        } else {
+            ui.label("");
+        }
+        ui.end_row();
+    }
+
     fn show_add_asset_page(&mut self, ui: &mut egui::Ui) {
         ui.label(
             egui::RichText::new("Add Asset")
@@ -426,20 +468,35 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         );
         ui.add_space(Self::SPACE_2);
 
-        ui.label("ISIN:");
-        ui.text_edit_singleline(&mut self.log_transaction_input.isin);
-        ui.add_space(Self::SPACE_2);
-
-        ui.label("Quantity:");
-        ui.text_edit_singleline(&mut self.log_transaction_input.quantity);
-        ui.add_space(Self::SPACE_2);
-
-        ui.label("Stock price:");
-        ui.text_edit_singleline(&mut self.log_transaction_input.stock_price);
-        ui.add_space(Self::SPACE_2);
-
-        ui.label("Order value:");
-        ui.text_edit_singleline(&mut self.log_transaction_input.order_value);
+        egui::Grid::new("log_transaction_input_grid")
+            .num_columns(3)
+            .spacing([Self::SPACE_2, Self::SPACE_2])
+            .show(ui, |ui| {
+                Self::show_log_transaction_input(
+                    ui,
+                    "ISIN",
+                    &mut self.log_transaction_input.isin,
+                    None,
+                );
+                Self::show_log_transaction_input(
+                    ui,
+                    "Quantity",
+                    &mut self.log_transaction_input.quantity,
+                    None,
+                );
+                Self::show_log_transaction_input(
+                    ui,
+                    "Share price",
+                    &mut self.log_transaction_input.stock_price,
+                    Some("The price per share or unit at which the asset was bought."),
+                );
+                Self::show_log_transaction_input(
+                    ui,
+                    "Order value",
+                    &mut self.log_transaction_input.order_value,
+                    Some("The total value of the order before fees and taxes."),
+                );
+            });
         ui.add_space(Self::SPACE_2);
 
         if ui.button("Save").clicked() {
