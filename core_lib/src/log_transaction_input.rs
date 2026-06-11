@@ -4,5 +4,6 @@ use serde::{Deserialize, Serialize};
 pub struct LogTransactionInput {
     pub isin: String,
     pub quantity: String,
-    pub price: String,
+    pub stock_price: String,
+    pub order_value: String,
 }

@@ -434,8 +434,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         ui.text_edit_singleline(&mut self.log_transaction_input.quantity);
         ui.add_space(Self::SPACE_2);
 
-        ui.label("Price:");
-        ui.text_edit_singleline(&mut self.log_transaction_input.price);
+        ui.label("Stock price:");
+        ui.text_edit_singleline(&mut self.log_transaction_input.stock_price);
+        ui.add_space(Self::SPACE_2);
+
+        ui.label("Order value:");
+        ui.text_edit_singleline(&mut self.log_transaction_input.order_value);
         ui.add_space(Self::SPACE_2);
 
         if ui.button("Save").clicked() {
