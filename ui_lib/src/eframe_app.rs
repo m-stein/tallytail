@@ -8,7 +8,7 @@ use core_lib::{
     TransactionType, call_macro_with_request_list,
 };
 use eframe::egui;
-use egui::TextWrapMode;
+use egui::{TextEdit, TextWrapMode, Widget};
 use egui_extras::DatePickerButton;
 use jiff::{Zoned, civil::Date};
 use std::collections::HashMap;
@@ -295,6 +295,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
     fn reset_log_transaction_page(&mut self) {
         self.log_transaction_input = LogTransactionInput::default();
+        self.log_transaction_input.date = Zoned::now().date();
     }
 
     fn init_log_transaction_page(&mut self) -> eyre::Result<()> {
@@ -329,10 +330,10 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             });
     }
 
-    fn show_log_transaction_input(
+    fn show_input_row(
         ui: &mut egui::Ui,
         label: &str,
-        value: &mut String,
+        widget: impl Widget,
         help_text: Option<&str>,
     ) {
         ui.label(format!("{label}:"));
@@ -341,7 +342,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 Self::LOG_TRANSACTION_INPUT_WIDTH,
                 Self::DEFAULT_INPUT_HEIGHT,
             ],
-            egui::TextEdit::singleline(value),
+            widget,
         );
         if let Some(help_text) = help_text {
             let help_id = format!(
@@ -493,28 +494,34 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             .num_columns(3)
             .spacing([Self::SPACE_2, Self::SPACE_2])
             .show(ui, |ui| {
-                Self::show_log_transaction_input(
+                Self::show_input_row(
+                    ui,
+                    "Date",
+                    DatePickerButton::new(&mut self.log_transaction_input.date),
+                    None,
+                );
+                Self::show_input_row(
                     ui,
                     "ISIN",
-                    &mut self.log_transaction_input.isin,
+                    TextEdit::singleline(&mut self.log_transaction_input.isin),
                     None,
                 );
-                Self::show_log_transaction_input(
+                Self::show_input_row(
                     ui,
                     "Quantity",
-                    &mut self.log_transaction_input.quantity,
+                    TextEdit::singleline(&mut self.log_transaction_input.quantity),
                     None,
                 );
-                Self::show_log_transaction_input(
+                Self::show_input_row(
                     ui,
                     "Share price",
-                    &mut self.log_transaction_input.stock_price,
-                    Some("The price per share or unit at which the asset was bought."),
+                    TextEdit::singleline(&mut self.log_transaction_input.stock_price),
+                    Some("The price per share or unit at which the asset was bought or sold."),
                 );
-                Self::show_log_transaction_input(
+                Self::show_input_row(
                     ui,
                     "Order value",
-                    &mut self.log_transaction_input.order_value,
+                    TextEdit::singleline(&mut self.log_transaction_input.order_value),
                     Some("The total value of the order before fees and taxes."),
                 );
             });
@@ -567,7 +574,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 ui.horizontal(|ui| {
                     ui.label("•");
                     let id = ui.make_persistent_id(("NewCatg", catg_idx));
-                    let response = ui.add(egui::TextEdit::singleline(&mut catg_input.name).id(id));
+                    let response = ui.add(TextEdit::singleline(&mut catg_input.name).id(id));
                     if focus_next_catg_input {
                         response.request_focus();
                         focus_next_catg_input = false;
@@ -611,7 +618,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                                 ui.label("•");
                                 let id = ui.make_persistent_id(("NewCatgVal", catg_idx, val_idx));
                                 let response =
-                                    ui.add(egui::TextEdit::singleline(&mut val_input.name).id(id));
+                                    ui.add(TextEdit::singleline(&mut val_input.name).id(id));
                                 if focus_next_val_input {
                                     response.request_focus();
                                     focus_next_val_input = false;
@@ -676,8 +683,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                         ui.horizontal(|ui| {
                             ui.label("•");
                             let id = ui.make_persistent_id(("AdaptCatgVal", catg.id, val_idx));
-                            let response =
-                                ui.add(egui::TextEdit::singleline(&mut val_input.name).id(id));
+                            let response = ui.add(TextEdit::singleline(&mut val_input.name).id(id));
                             if focus_next_val_input {
                                 response.request_focus();
                                 focus_next_val_input = false;
@@ -723,7 +729,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         ui.vertical(|ui| {
             for asset in &mut self.allocation_record_assets {
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut asset.amount).desired_width(80.0));
+                    ui.add(TextEdit::singleline(&mut asset.amount).desired_width(80.0));
                     ui.label(&asset.label);
                 });
             }

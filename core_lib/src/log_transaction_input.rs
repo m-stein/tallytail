@@ -1,3 +1,4 @@
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,4 +15,5 @@ pub struct LogTransactionInput {
     pub quantity: String,
     pub stock_price: String,
     pub order_value: String,
+    pub date: Date,
 }
