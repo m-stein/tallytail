@@ -1,11 +1,12 @@
 use core_lib::{
     AdaptCategoryInput, AllocationRecord, Asset, AssetReference, AssetReferenceType,
     CategoryAssignment, ConfigureCatgoriesInput, GetAllocDiagramDataArgs, NewCategoryInput,
-    add_asset_args::AddAssetArgs, allocation_diagram_data::AllocationDiagramData,
+    TransactionType, add_asset_args::AddAssetArgs, allocation_diagram_data::AllocationDiagramData,
     category::Category, category_value::CategoryValue, log_transaction_input::LogTransactionInput,
 };
 use eyre::eyre;
 use rusqlite::{params, types::FromSqlError};
+use rust_decimal::Decimal;
 use std::{
     collections::HashSet,
     fs,
@@ -66,10 +67,152 @@ pub fn add_asset(args: AddAssetArgs) -> eyre::Result<()> {
 }
 
 pub fn log_transaction(input: LogTransactionInput) -> eyre::Result<()> {
-    println!(
-        "Back-end: Log Transaction: Type='{:?}', Date='{:?}' ISIN='{}', Quantity='{}', Stock price='{}', Order value='{}'",
-        input.r#type, input.date, input.isin, input.quantity, input.stock_price, input.order_value,
-    );
+    let transaction = validate_log_transaction_input(input)?;
+    let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
+    if let Some(parent) = db_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let connection = rusqlite::Connection::open(db_path)?;
+    ensure_transactions_schema(&connection)?;
+    insert_transaction(&connection, transaction)
+}
+
+#[derive(Debug)]
+struct Transaction {
+    r#type: TransactionType,
+    date: jiff::civil::Date,
+    isin: String,
+    quantity: Decimal,
+    share_price: Decimal,
+    order_value: Decimal,
+}
+
+fn validate_log_transaction_input(input: LogTransactionInput) -> eyre::Result<Transaction> {
+    if input.date > jiff::Zoned::now().date() {
+        return Err(eyre!("Transaction date must not be in the future"));
+    }
+    let isin = normalize_isin(&input.isin)?;
+    let quantity = parse_transaction_decimal("Quantity", &input.quantity)?;
+    let share_price = parse_transaction_decimal("Share price", &input.share_price)?;
+    let order_value = parse_transaction_decimal("Order value", &input.order_value)?;
+
+    if quantity <= Decimal::ZERO {
+        return Err(eyre!("Quantity must be greater than 0"));
+    }
+    if share_price <= Decimal::ZERO {
+        return Err(eyre!("Share price must be greater than 0"));
+    }
+    let minimum_order_value = quantity
+        .checked_mul(share_price)
+        .ok_or_else(|| eyre!("Quantity * share price is too large"))?;
+    if order_value < minimum_order_value {
+        return Err(eyre!(
+            "Order value must be greater than or equal to quantity * share price"
+        ));
+    }
+
+    Ok(Transaction {
+        r#type: input.r#type,
+        date: input.date,
+        isin,
+        quantity,
+        share_price,
+        order_value,
+    })
+}
+
+fn parse_transaction_decimal(field_name: &str, input: &str) -> eyre::Result<Decimal> {
+    input
+        .trim()
+        .parse::<Decimal>()
+        .map_err(|_| eyre!("{field_name} must be a valid decimal number"))
+}
+
+fn normalize_isin(input: &str) -> eyre::Result<String> {
+    let isin = input.trim().to_ascii_uppercase();
+    if !is_valid_isin(&isin) {
+        return Err(eyre!("ISIN must be a valid 12-character ISIN"));
+    }
+    Ok(isin)
+}
+
+fn is_valid_isin(isin: &str) -> bool {
+    let bytes = isin.as_bytes();
+    if bytes.len() != 12 {
+        return false;
+    }
+    if !bytes[0].is_ascii_uppercase() || !bytes[1].is_ascii_uppercase() {
+        return false;
+    }
+    if !bytes[2..11].iter().all(u8::is_ascii_alphanumeric) || !bytes[11].is_ascii_digit() {
+        return false;
+    }
+    let mut digits = Vec::with_capacity(24);
+    for byte in bytes {
+        if byte.is_ascii_digit() {
+            digits.push(byte - b'0');
+        } else if byte.is_ascii_uppercase() {
+            let mut value = byte - b'A' + 10;
+            digits.push(value / 10);
+            value %= 10;
+            digits.push(value);
+        } else {
+            return false;
+        }
+    }
+    let mut sum = 0_u32;
+    let mut double = false;
+    for digit in digits.iter().rev() {
+        let mut value = u32::from(*digit);
+        if double {
+            value *= 2;
+            value = (value / 10) + (value % 10);
+        }
+        sum += value;
+        double = !double;
+    }
+    sum % 10 == 0
+}
+
+fn ensure_transactions_schema(connection: &rusqlite::Connection) -> eyre::Result<()> {
+    connection.execute(
+        "
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            transaction_type TEXT NOT NULL,
+            isin TEXT NOT NULL,
+            quantity NUMERIC NOT NULL,
+            share_price NUMERIC NOT NULL,
+            order_value NUMERIC NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        ",
+        [],
+    )?;
+    Ok(())
+}
+
+fn insert_transaction(
+    connection: &rusqlite::Connection,
+    transaction: Transaction,
+) -> eyre::Result<()> {
+    connection.execute(
+        "
+        INSERT INTO transactions
+            (date, transaction_type, isin, quantity, share_price, order_value)
+        VALUES
+            (?1, ?2, ?3, ?4, ?5, ?6)
+        ",
+        params![
+            transaction.date.to_string(),
+            format!("{:?}", transaction.r#type),
+            transaction.isin,
+            transaction.quantity.to_string(),
+            transaction.share_price.to_string(),
+            transaction.order_value.to_string(),
+        ],
+    )?;
     Ok(())
 }
 
@@ -325,4 +468,106 @@ pub fn configure_categories(
     }
 
     Ok((remaining, first_error))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core_lib::TransactionType;
+    use jiff::Zoned;
+
+    fn valid_input() -> LogTransactionInput {
+        LogTransactionInput {
+            r#type: TransactionType::Buy,
+            date: Zoned::now().date(),
+            isin: "US0378331005".to_string(),
+            quantity: "2.5".to_string(),
+            share_price: "100.00".to_string(),
+            order_value: "250.00".to_string(),
+        }
+    }
+
+    #[test]
+    fn accepts_valid_isin_with_check_digit() {
+        assert!(is_valid_isin("US0378331005"));
+    }
+
+    #[test]
+    fn rejects_invalid_isin_check_digit() {
+        assert!(!is_valid_isin("US0378331006"));
+    }
+
+    #[test]
+    fn rejects_future_transaction_date() {
+        let mut input = valid_input();
+        input.date = Zoned::now().tomorrow().unwrap().date();
+
+        let err = validate_log_transaction_input(input).unwrap_err().to_string();
+
+        assert!(err.contains("future"));
+    }
+
+    #[test]
+    fn rejects_order_value_below_quantity_times_share_price() {
+        let mut input = valid_input();
+        input.order_value = "249.99".to_string();
+
+        let err = validate_log_transaction_input(input).unwrap_err().to_string();
+
+        assert!(err.contains("quantity * share price"));
+    }
+
+    #[test]
+    fn rejects_quantity_less_than_or_equal_to_zero() {
+        for quantity in ["0", "-1"] {
+            let mut input = valid_input();
+            input.quantity = quantity.to_string();
+
+            let err = validate_log_transaction_input(input).unwrap_err().to_string();
+
+            assert!(err.contains("Quantity must be greater than 0"));
+        }
+    }
+
+    #[test]
+    fn rejects_share_price_less_than_or_equal_to_zero() {
+        for share_price in ["0", "-1"] {
+            let mut input = valid_input();
+            input.share_price = share_price.to_string();
+
+            let err = validate_log_transaction_input(input).unwrap_err().to_string();
+
+            assert!(err.contains("Share price must be greater than 0"));
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_quantity_decimal_format() {
+        let mut input = valid_input();
+        input.quantity = "not-a-decimal".to_string();
+
+        let err = validate_log_transaction_input(input).unwrap_err().to_string();
+
+        assert!(err.contains("Quantity must be a valid decimal number"));
+    }
+
+    #[test]
+    fn rejects_invalid_share_price_decimal_format() {
+        let mut input = valid_input();
+        input.share_price = "not-a-decimal".to_string();
+
+        let err = validate_log_transaction_input(input).unwrap_err().to_string();
+
+        assert!(err.contains("Share price must be a valid decimal number"));
+    }
+
+    #[test]
+    fn rejects_invalid_order_value_decimal_format() {
+        let mut input = valid_input();
+        input.order_value = "not-a-decimal".to_string();
+
+        let err = validate_log_transaction_input(input).unwrap_err().to_string();
+
+        assert!(err.contains("Order value must be a valid decimal number"));
+    }
 }

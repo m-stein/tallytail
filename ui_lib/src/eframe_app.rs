@@ -515,7 +515,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 Self::show_input_row(
                     ui,
                     "Share price",
-                    TextEdit::singleline(&mut self.log_transaction_input.stock_price),
+                    TextEdit::singleline(&mut self.log_transaction_input.share_price),
                     Some("The price per share or unit at which the asset was bought or sold."),
                 );
                 Self::show_input_row(

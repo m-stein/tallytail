@@ -13,7 +13,7 @@ pub struct LogTransactionInput {
     pub r#type: TransactionType,
     pub isin: String,
     pub quantity: String,
-    pub stock_price: String,
+    pub share_price: String,
     pub order_value: String,
     pub date: Date,
 }
