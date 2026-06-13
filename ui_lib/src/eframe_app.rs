@@ -4,14 +4,15 @@ use crate::png::load_png_texture_from_bytes;
 use core_lib::{
     AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
     AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
-    ConfigureCatgoriesInput, Currency, GetAllocDiagramDataArgs, LogTransactionInput,
-    NewCategoryInput, TransactionType, call_macro_with_request_list,
+    ConfigureCatgoriesInput, GetAllocDiagramDataArgs, LogTransactionInput, NewCategoryInput,
+    TransactionType, call_macro_with_request_list,
 };
 use eframe::egui;
 use egui::{TextEdit, TextWrapMode, Widget};
 use egui_extras::DatePickerButton;
 use jiff::{Zoned, civil::Date};
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::sync::mpsc::Receiver;
 use strum::IntoEnumIterator;
 
@@ -124,6 +125,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     const SPACE_3: f32 = 24.0;
     const DEFAULT_INPUT_HEIGHT: f32 = 19.0;
     const DEFAULT_INPUT_WIDTH: f32 = 150.0;
+    const HELP_POPUP_WIDTH: f32 = 260.0;
     const LOG_TRANSACTION_TYPE_BTN_SIZE: [f32; 2] = [120.0, 36.0];
     const SYM_BTN_SIZE: f32 = Self::DEFAULT_INPUT_HEIGHT;
     const SQUIRREL_IMG_PATH: &str = "img/squirrel_68x68.png";
@@ -314,22 +316,27 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         Ok(())
     }
 
-    fn show_help_button(ui: &mut egui::Ui, help_id: &str, help_text: &str) {
-        let response = ui.add_sized(
-            [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
-            egui::Label::new(egui::RichText::new("?").color(ui.visuals().hyperlink_color))
-                .sense(egui::Sense::click()),
-        );
-        egui::Popup::menu(&response)
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .width(260.0)
-            .id(ui.make_persistent_id(help_id))
-            .show(|ui| {
-                ui.label(help_text);
-            });
+    fn show_help_if_any(ui: &mut egui::Ui, label: &str, help_text: Option<&str>) {
+        if let Some(help_text) = help_text {
+            let help_id = format!("{}_help", label);
+            let response = ui.add_sized(
+                [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
+                egui::Label::new(egui::RichText::new("?").color(ui.visuals().hyperlink_color))
+                    .sense(egui::Sense::click()),
+            );
+            egui::Popup::menu(&response)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .width(Self::HELP_POPUP_WIDTH)
+                .id(ui.make_persistent_id(help_id))
+                .show(|ui| {
+                    ui.label(help_text);
+                });
+        } else {
+            ui.label("");
+        }
     }
 
-    fn show_input_row(
+    fn show_widget_input_row(
         ui: &mut egui::Ui,
         label: &str,
         widget: impl Widget,
@@ -340,30 +347,29 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             [Self::DEFAULT_INPUT_WIDTH, Self::DEFAULT_INPUT_HEIGHT],
             widget,
         );
-        if let Some(help_text) = help_text {
-            let help_id = format!(
-                "log_transaction_{}_help",
-                label.to_lowercase().replace(' ', "_")
-            );
-            Self::show_help_button(ui, &help_id, help_text);
-        } else {
-            ui.label("");
-        }
+        Self::show_help_if_any(ui, label, help_text);
         ui.end_row();
     }
 
-    fn show_currency_row(ui: &mut egui::Ui, value: &mut Currency) {
-        ui.label("Currency:");
-        egui::ComboBox::from_id_salt("log_transaction_currency")
+    fn show_enum_input_row<T>(
+        ui: &mut egui::Ui,
+        label: &str,
+        value: &mut T,
+        help_text: Option<&str>,
+    ) where
+        T: IntoEnumIterator + Copy + PartialEq + Display,
+    {
+        ui.label(format!("{label}:"));
+        egui::ComboBox::from_id_salt(format!("{}_combobox", label))
             .selected_text(value.to_string())
             .width(Self::DEFAULT_INPUT_WIDTH)
             .height(Self::DEFAULT_INPUT_HEIGHT)
             .show_ui(ui, |ui| {
-                for currency in Currency::iter() {
-                    ui.selectable_value(value, currency, currency.to_string());
+                for enum_value in T::iter() {
+                    ui.selectable_value(value, enum_value, enum_value.to_string());
                 }
             });
-        ui.label("");
+        Self::show_help_if_any(ui, label, help_text);
         ui.end_row();
     }
 
@@ -505,32 +511,37 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             .num_columns(3)
             .spacing([Self::SPACE_2, Self::SPACE_2])
             .show(ui, |ui| {
-                Self::show_input_row(
+                Self::show_widget_input_row(
                     ui,
                     "Date",
                     DatePickerButton::new(&mut self.log_transaction_input.date),
                     None,
                 );
-                Self::show_currency_row(ui, &mut self.log_transaction_input.currency);
-                Self::show_input_row(
+                Self::show_enum_input_row(
+                    ui,
+                    "Currency",
+                    &mut self.log_transaction_input.currency,
+                    None,
+                );
+                Self::show_widget_input_row(
                     ui,
                     "ISIN",
                     TextEdit::singleline(&mut self.log_transaction_input.isin),
                     None,
                 );
-                Self::show_input_row(
+                Self::show_widget_input_row(
                     ui,
                     "Quantity",
                     TextEdit::singleline(&mut self.log_transaction_input.quantity),
                     None,
                 );
-                Self::show_input_row(
+                Self::show_widget_input_row(
                     ui,
                     "Share price",
                     TextEdit::singleline(&mut self.log_transaction_input.share_price),
                     Some("The price per share or unit at which the asset was bought or sold."),
                 );
-                Self::show_input_row(
+                Self::show_widget_input_row(
                     ui,
                     "Order value",
                     TextEdit::singleline(&mut self.log_transaction_input.order_value),

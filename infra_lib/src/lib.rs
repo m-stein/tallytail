@@ -174,7 +174,7 @@ fn is_valid_isin(isin: &str) -> bool {
         sum += value;
         double = !double;
     }
-    sum % 10 == 0
+    sum.is_multiple_of(10)
 }
 
 fn ensure_transactions_schema(connection: &rusqlite::Connection) -> eyre::Result<()> {
