@@ -4,8 +4,8 @@ use crate::png::load_png_texture_from_bytes;
 use core_lib::{
     AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
     AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
-    ConfigureCatgoriesInput, GetAllocDiagramDataArgs, LogTransactionInput, NewCategoryInput,
-    TransactionType, call_macro_with_request_list,
+    ConfigureCatgoriesInput, Currency, GetAllocDiagramDataArgs, LogTransactionInput,
+    NewCategoryInput, TransactionType, call_macro_with_request_list,
 };
 use eframe::egui;
 use egui::{TextEdit, TextWrapMode, Widget};
@@ -123,7 +123,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     const SPACE_2: f32 = 12.0;
     const SPACE_3: f32 = 24.0;
     const DEFAULT_INPUT_HEIGHT: f32 = 19.0;
-    const LOG_TRANSACTION_INPUT_WIDTH: f32 = 150.0;
+    const DEFAULT_INPUT_WIDTH: f32 = 150.0;
     const LOG_TRANSACTION_TYPE_BTN_SIZE: [f32; 2] = [120.0, 36.0];
     const SYM_BTN_SIZE: f32 = Self::DEFAULT_INPUT_HEIGHT;
     const SQUIRREL_IMG_PATH: &str = "img/squirrel_68x68.png";
@@ -295,7 +295,6 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
     fn reset_log_transaction_page(&mut self) {
         self.log_transaction_input = LogTransactionInput::default();
-        self.log_transaction_input.date = Zoned::now().date();
     }
 
     fn init_log_transaction_page(&mut self) -> eyre::Result<()> {
@@ -338,10 +337,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     ) {
         ui.label(format!("{label}:"));
         ui.add_sized(
-            [
-                Self::LOG_TRANSACTION_INPUT_WIDTH,
-                Self::DEFAULT_INPUT_HEIGHT,
-            ],
+            [Self::DEFAULT_INPUT_WIDTH, Self::DEFAULT_INPUT_HEIGHT],
             widget,
         );
         if let Some(help_text) = help_text {
@@ -353,6 +349,21 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         } else {
             ui.label("");
         }
+        ui.end_row();
+    }
+
+    fn show_currency_row(ui: &mut egui::Ui, value: &mut Currency) {
+        ui.label("Currency:");
+        egui::ComboBox::from_id_salt("log_transaction_currency")
+            .selected_text(value.to_string())
+            .width(Self::DEFAULT_INPUT_WIDTH)
+            .height(Self::DEFAULT_INPUT_HEIGHT)
+            .show_ui(ui, |ui| {
+                for currency in Currency::iter() {
+                    ui.selectable_value(value, currency, currency.to_string());
+                }
+            });
+        ui.label("");
         ui.end_row();
     }
 
@@ -500,6 +511,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     DatePickerButton::new(&mut self.log_transaction_input.date),
                     None,
                 );
+                Self::show_currency_row(ui, &mut self.log_transaction_input.currency);
                 Self::show_input_row(
                     ui,
                     "ISIN",

@@ -1,8 +1,9 @@
 use core_lib::{
     AdaptCategoryInput, AllocationRecord, Asset, AssetReference, AssetReferenceType,
-    CategoryAssignment, ConfigureCatgoriesInput, GetAllocDiagramDataArgs, NewCategoryInput,
-    TransactionType, add_asset_args::AddAssetArgs, allocation_diagram_data::AllocationDiagramData,
-    category::Category, category_value::CategoryValue, log_transaction_input::LogTransactionInput,
+    CategoryAssignment, ConfigureCatgoriesInput, Currency, GetAllocDiagramDataArgs,
+    NewCategoryInput, TransactionType, add_asset_args::AddAssetArgs,
+    allocation_diagram_data::AllocationDiagramData, category::Category,
+    category_value::CategoryValue, log_transaction_input::LogTransactionInput,
 };
 use eyre::eyre;
 use rusqlite::{params, types::FromSqlError};
@@ -80,6 +81,7 @@ pub fn log_transaction(input: LogTransactionInput) -> eyre::Result<()> {
 #[derive(Debug)]
 struct Transaction {
     r#type: TransactionType,
+    currency: Currency,
     date: jiff::civil::Date,
     isin: String,
     quantity: Decimal,
@@ -113,6 +115,7 @@ fn validate_log_transaction_input(input: LogTransactionInput) -> eyre::Result<Tr
 
     Ok(Transaction {
         r#type: input.r#type,
+        currency: input.currency,
         date: input.date,
         isin,
         quantity,
@@ -181,6 +184,7 @@ fn ensure_transactions_schema(connection: &rusqlite::Connection) -> eyre::Result
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             date TEXT NOT NULL,
             transaction_type TEXT NOT NULL,
+            currency TEXT NOT NULL,
             isin TEXT NOT NULL,
             quantity NUMERIC NOT NULL,
             share_price NUMERIC NOT NULL,
@@ -200,13 +204,14 @@ fn insert_transaction(
     connection.execute(
         "
         INSERT INTO transactions
-            (date, transaction_type, isin, quantity, share_price, order_value)
+            (date, transaction_type, currency, isin, quantity, share_price, order_value)
         VALUES
-            (?1, ?2, ?3, ?4, ?5, ?6)
+            (?1, ?2, ?3, ?4, ?5, ?6, ?7)
         ",
         params![
             transaction.date.to_string(),
             format!("{:?}", transaction.r#type),
+            transaction.currency.to_string(),
             transaction.isin,
             transaction.quantity.to_string(),
             transaction.share_price.to_string(),
@@ -479,6 +484,7 @@ mod tests {
     fn valid_input() -> LogTransactionInput {
         LogTransactionInput {
             r#type: TransactionType::Buy,
+            currency: Currency::Eur,
             date: Zoned::now().date(),
             isin: "US0378331005".to_string(),
             quantity: "2.5".to_string(),
@@ -502,7 +508,9 @@ mod tests {
         let mut input = valid_input();
         input.date = Zoned::now().tomorrow().unwrap().date();
 
-        let err = validate_log_transaction_input(input).unwrap_err().to_string();
+        let err = validate_log_transaction_input(input)
+            .unwrap_err()
+            .to_string();
 
         assert!(err.contains("future"));
     }
@@ -512,7 +520,9 @@ mod tests {
         let mut input = valid_input();
         input.order_value = "249.99".to_string();
 
-        let err = validate_log_transaction_input(input).unwrap_err().to_string();
+        let err = validate_log_transaction_input(input)
+            .unwrap_err()
+            .to_string();
 
         assert!(err.contains("quantity * share price"));
     }
@@ -523,7 +533,9 @@ mod tests {
             let mut input = valid_input();
             input.quantity = quantity.to_string();
 
-            let err = validate_log_transaction_input(input).unwrap_err().to_string();
+            let err = validate_log_transaction_input(input)
+                .unwrap_err()
+                .to_string();
 
             assert!(err.contains("Quantity must be greater than 0"));
         }
@@ -535,7 +547,9 @@ mod tests {
             let mut input = valid_input();
             input.share_price = share_price.to_string();
 
-            let err = validate_log_transaction_input(input).unwrap_err().to_string();
+            let err = validate_log_transaction_input(input)
+                .unwrap_err()
+                .to_string();
 
             assert!(err.contains("Share price must be greater than 0"));
         }
@@ -546,7 +560,9 @@ mod tests {
         let mut input = valid_input();
         input.quantity = "not-a-decimal".to_string();
 
-        let err = validate_log_transaction_input(input).unwrap_err().to_string();
+        let err = validate_log_transaction_input(input)
+            .unwrap_err()
+            .to_string();
 
         assert!(err.contains("Quantity must be a valid decimal number"));
     }
@@ -556,7 +572,9 @@ mod tests {
         let mut input = valid_input();
         input.share_price = "not-a-decimal".to_string();
 
-        let err = validate_log_transaction_input(input).unwrap_err().to_string();
+        let err = validate_log_transaction_input(input)
+            .unwrap_err()
+            .to_string();
 
         assert!(err.contains("Share price must be a valid decimal number"));
     }
@@ -566,7 +584,9 @@ mod tests {
         let mut input = valid_input();
         input.order_value = "not-a-decimal".to_string();
 
-        let err = validate_log_transaction_input(input).unwrap_err().to_string();
+        let err = validate_log_transaction_input(input)
+            .unwrap_err()
+            .to_string();
 
         assert!(err.contains("Order value must be a valid decimal number"));
     }

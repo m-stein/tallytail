@@ -17,7 +17,7 @@ pub use crate::category::Category;
 pub use crate::configure_categories_input::{
     AdaptCategoryInput, CategoryValueInput, ConfigureCatgoriesInput, NewCategoryInput,
 };
-pub use crate::log_transaction_input::{LogTransactionInput, TransactionType};
+pub use crate::log_transaction_input::{Currency, LogTransactionInput, TransactionType};
 
 pub const APP_NAME: &str = "Asset Allocation Tracker";
 
