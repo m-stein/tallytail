@@ -178,44 +178,124 @@ fn is_valid_isin(isin: &str) -> bool {
 }
 
 fn ensure_transactions_schema(connection: &rusqlite::Connection) -> eyre::Result<()> {
-    connection.execute(
+    connection.execute_batch(
         "
+        PRAGMA foreign_keys = ON;
+
+        CREATE TABLE IF NOT EXISTS assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            isin TEXT NOT NULL UNIQUE
+        );
+
+        CREATE TABLE IF NOT EXISTS currencies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE
+        );
+
+        CREATE TABLE IF NOT EXISTS transaction_types (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE
+        );
+
+        CREATE TABLE IF NOT EXISTS dates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL UNIQUE
+        );
+
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL,
-            transaction_type TEXT NOT NULL,
-            currency TEXT NOT NULL,
-            isin TEXT NOT NULL,
-            quantity NUMERIC NOT NULL,
-            share_price NUMERIC NOT NULL,
-            order_value NUMERIC NOT NULL,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
+            date_id INTEGER NOT NULL,
+            type_id INTEGER NOT NULL,
+            asset_id INTEGER NOT NULL,
+            currency_id INTEGER NOT NULL,
+            quantity TEXT NOT NULL,
+            share_price TEXT NOT NULL,
+            order_value TEXT NOT NULL,
+            created_at_date_id INTEGER NOT NULL,
+            created_at_time TEXT NOT NULL,
+            FOREIGN KEY (date_id) REFERENCES dates(id),
+            FOREIGN KEY (type_id) REFERENCES transaction_types(id),
+            FOREIGN KEY (asset_id) REFERENCES assets(id),
+            FOREIGN KEY (currency_id) REFERENCES currencies(id),
+            FOREIGN KEY (created_at_date_id) REFERENCES dates(id)
+        );
         ",
-        [],
     )?;
     Ok(())
+}
+
+fn get_or_create_id(
+    connection: &rusqlite::Connection,
+    table_name: &str,
+    column_name: &str,
+    value: &str,
+) -> eyre::Result<i64> {
+    connection.execute(
+        &format!("INSERT OR IGNORE INTO {table_name} ({column_name}) VALUES (?1)"),
+        params![value],
+    )?;
+    let id = connection.query_row(
+        &format!("SELECT id FROM {table_name} WHERE {column_name} = ?1"),
+        params![value],
+        |row| row.get(0),
+    )?;
+    Ok(id)
+}
+
+fn transaction_type_code(transaction_type: TransactionType) -> &'static str {
+    match transaction_type {
+        TransactionType::Buy => "BUY",
+        TransactionType::Sell => "SELL",
+    }
 }
 
 fn insert_transaction(
     connection: &rusqlite::Connection,
     transaction: Transaction,
 ) -> eyre::Result<()> {
+    let asset_id = get_or_create_id(connection, "assets", "isin", &transaction.isin)?;
+    let transaction_date = transaction.date.to_string();
+    let date_id = get_or_create_id(connection, "dates", "date", &transaction_date)?;
+    let now = jiff::Zoned::now();
+    let created_at_date = now.date().to_string();
+    let created_at_date_id = get_or_create_id(connection, "dates", "date", &created_at_date)?;
+    let created_at_time = now.time().to_string();
+    let currency_code = transaction.currency.to_string();
+    let currency_id = get_or_create_id(connection, "currencies", "code", &currency_code)?;
+    let type_id = get_or_create_id(
+        connection,
+        "transaction_types",
+        "code",
+        transaction_type_code(transaction.r#type),
+    )?;
+
     connection.execute(
         "
         INSERT INTO transactions
-            (date, transaction_type, currency, isin, quantity, share_price, order_value)
+            (
+                date_id,
+                type_id,
+                asset_id,
+                currency_id,
+                quantity,
+                share_price,
+                order_value,
+                created_at_date_id,
+                created_at_time
+            )
         VALUES
-            (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
         ",
         params![
-            transaction.date.to_string(),
-            format!("{:?}", transaction.r#type),
-            transaction.currency.to_string(),
-            transaction.isin,
+            date_id,
+            type_id,
+            asset_id,
+            currency_id,
             transaction.quantity.to_string(),
             transaction.share_price.to_string(),
             transaction.order_value.to_string(),
+            created_at_date_id,
+            created_at_time,
         ],
     )?;
     Ok(())
