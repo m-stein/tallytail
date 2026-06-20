@@ -114,13 +114,21 @@ fn validate_log_transaction_input(input: LogTransactionInput) -> eyre::Result<Tr
     if share_price <= Decimal::ZERO {
         return Err(eyre!("Share price must be greater than 0"));
     }
-    let minimum_order_value = quantity
+    let trade_value = quantity
         .checked_mul(share_price)
         .ok_or_else(|| eyre!("Quantity * share price is too large"))?;
-    if order_value < minimum_order_value {
-        return Err(eyre!(
-            "Order value must be greater than or equal to quantity * share price"
-        ));
+    match input.r#type {
+        TransactionType::Buy if order_value < trade_value => {
+            return Err(eyre!(
+                "Order value must be greater than or equal to quantity * share price"
+            ));
+        }
+        TransactionType::Sell if order_value > trade_value => {
+            return Err(eyre!(
+                "Order value must be less than or equal to quantity * share price"
+            ));
+        }
+        _ => {}
     }
 
     Ok(Transaction {
@@ -644,6 +652,28 @@ mod tests {
     fn rejects_order_value_below_quantity_times_share_price() {
         let mut input = valid_input();
         input.order_value = "249.99".to_string();
+
+        let err = validate_log_transaction_input(input)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("quantity * share price"));
+    }
+
+    #[test]
+    fn accepts_sell_order_value_below_quantity_times_share_price() {
+        let mut input = valid_input();
+        input.r#type = TransactionType::Sell;
+        input.order_value = "249.99".to_string();
+
+        validate_log_transaction_input(input).unwrap();
+    }
+
+    #[test]
+    fn rejects_sell_order_value_above_quantity_times_share_price() {
+        let mut input = valid_input();
+        input.r#type = TransactionType::Sell;
+        input.order_value = "250.01".to_string();
 
         let err = validate_log_transaction_input(input)
             .unwrap_err()
