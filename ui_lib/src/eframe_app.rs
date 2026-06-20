@@ -4,8 +4,8 @@ use crate::png::load_png_texture_from_bytes;
 use core_lib::{
     AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
     AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
-    ConfigureCatgoriesInput, GetAllocDiagramDataArgs, LogTransactionInput, NewCategoryInput,
-    TransactionType, call_macro_with_request_list,
+    ConfigureCatgoriesInput, GetAllocDiagramDataArgs, ListedTransaction, LogTransactionInput,
+    NewCategoryInput, TransactionType, call_macro_with_request_list,
 };
 use eframe::egui;
 use egui::{TextEdit, TextWrapMode, Widget};
@@ -88,6 +88,7 @@ enum Page {
     ConfigureCategories,
     AddAllocationRecord,
     LogTransaction,
+    ListTransactions,
 }
 
 pub struct PositionItem {
@@ -110,6 +111,7 @@ pub struct EframeApp<B: AppBackend> {
     categories: Vec<Category>,
     add_asset_args: AddAssetArgs,
     log_transaction_input: LogTransactionInput,
+    listed_transactions: Vec<ListedTransaction>,
     cfg_catgs_input: ConfigureCatgoriesInput,
     request_data: RequestData,
     page: Page,
@@ -148,6 +150,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             latest_record: None,
             add_asset_args: AddAssetArgs::default(),
             log_transaction_input: LogTransactionInput::default(),
+            listed_transactions: Vec::new(),
         };
         app.start_load_png_data(Self::SQUIRREL_IMG_PATH.to_string());
         app.start_get_categories();
@@ -301,6 +304,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
     fn init_log_transaction_page(&mut self) -> eyre::Result<()> {
         self.reset_log_transaction_page();
+        self.message = None;
+        Ok(())
+    }
+
+    fn init_list_transactions_page(&mut self) -> eyre::Result<()> {
+        self.start_list_transactions();
         self.message = None;
         Ok(())
     }
@@ -553,6 +562,38 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         if ui.button("Save").clicked() {
             self.start_log_transaction(self.log_transaction_input.clone());
         }
+    }
+
+    fn show_list_transactions_page(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("List Transactions")
+                .heading()
+                .size(Self::H2_SIZE),
+        );
+        ui.add_space(Self::SPACE_3);
+
+        egui::Grid::new("list_transactions_grid")
+            .striped(true)
+            .spacing([Self::SPACE_2, Self::SPACE_2])
+            .show(ui, |ui| {
+                ui.strong("Date");
+                ui.strong("Type");
+                ui.strong("ISIN");
+                ui.strong("Quantity");
+                ui.strong("Share Price");
+                ui.strong("Order Value");
+                ui.end_row();
+
+                for transaction in &self.listed_transactions {
+                    ui.label(&transaction.date);
+                    ui.label(&transaction.r#type);
+                    ui.label(&transaction.isin);
+                    ui.label(&transaction.quantity);
+                    ui.label(&transaction.share_price);
+                    ui.label(&transaction.order_value);
+                    ui.end_row();
+                }
+            });
     }
 
     fn show_configure_categories_page(&mut self, ui: &mut egui::Ui) {
@@ -864,6 +905,9 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             self.message = Some("Transaction logged".into());
             self.reset_log_transaction_page();
         }
+        if let Some(transactions) = self.poll_list_transactions_rx() {
+            self.listed_transactions = transactions;
+        }
     }
 
     fn show_content(&mut self, ui: &mut egui::Ui) {
@@ -907,6 +951,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     "Log Transaction",
                     Self::init_log_transaction_page,
                 );
+                self.show_page_button(
+                    ui,
+                    Page::ListTransactions,
+                    "List Transactions",
+                    Self::init_list_transactions_page,
+                );
             });
             ui.add_space(20.0);
             ui.vertical(|ui| {
@@ -919,9 +969,10 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                         Page::ConfigureCategories => self.show_configure_categories_page(ui),
                         Page::AddAllocationRecord => self.show_add_allocation_record_page(ui),
                         Page::LogTransaction => self.show_log_transaction_page(ui),
+                        Page::ListTransactions => self.show_list_transactions_page(ui),
                     }
                 }
-                ui.add_space(20.0);
+                ui.add_space(Self::SPACE_3);
                 ui.label(egui::RichText::new("Message").heading().size(Self::H2_SIZE));
                 ui.add_space(Self::SPACE_2);
                 if let Some(message) = &self.message {

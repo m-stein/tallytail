@@ -4,6 +4,7 @@ pub mod allocation_record_input;
 pub mod category;
 pub mod category_value;
 pub mod configure_categories_input;
+pub mod listed_transaction;
 pub mod log_transaction_input;
 pub mod request_list;
 
@@ -17,6 +18,7 @@ pub use crate::category::Category;
 pub use crate::configure_categories_input::{
     AdaptCategoryInput, CategoryValueInput, ConfigureCatgoriesInput, NewCategoryInput,
 };
+pub use crate::listed_transaction::ListedTransaction;
 pub use crate::log_transaction_input::{Currency, LogTransactionInput, TransactionType};
 
 pub const APP_NAME: &str = "Asset Allocation Tracker";

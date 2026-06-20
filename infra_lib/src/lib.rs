@@ -1,7 +1,7 @@
 use core_lib::{
     AdaptCategoryInput, AllocationRecord, Asset, AssetReference, AssetReferenceType,
     CategoryAssignment, ConfigureCatgoriesInput, Currency, GetAllocDiagramDataArgs,
-    NewCategoryInput, TransactionType, add_asset_args::AddAssetArgs,
+    ListedTransaction, NewCategoryInput, TransactionType, add_asset_args::AddAssetArgs,
     allocation_diagram_data::AllocationDiagramData, category::Category,
     category_value::CategoryValue, log_transaction_input::LogTransactionInput,
 };
@@ -76,6 +76,16 @@ pub fn log_transaction(input: LogTransactionInput) -> eyre::Result<()> {
     let connection = rusqlite::Connection::open(db_path)?;
     ensure_transactions_schema(&connection)?;
     insert_transaction(&connection, transaction)
+}
+
+pub fn list_transactions() -> eyre::Result<Vec<ListedTransaction>> {
+    let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
+    if let Some(parent) = db_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let connection = rusqlite::Connection::open(db_path)?;
+    ensure_transactions_schema(&connection)?;
+    list_transactions_raw(&connection)
 }
 
 #[derive(Debug)]
@@ -299,6 +309,41 @@ fn insert_transaction(
         ],
     )?;
     Ok(())
+}
+
+fn list_transactions_raw(
+    connection: &rusqlite::Connection,
+) -> eyre::Result<Vec<ListedTransaction>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            dates.date,
+            transaction_types.code,
+            assets.isin,
+            transactions.quantity,
+            transactions.share_price,
+            transactions.order_value
+        FROM transactions
+        JOIN dates ON dates.id = transactions.date_id
+        JOIN transaction_types ON transaction_types.id = transactions.type_id
+        JOIN assets ON assets.id = transactions.asset_id
+        ORDER BY dates.date DESC, transactions.id DESC
+        LIMIT 50
+        ",
+    )?;
+    let transactions = statement
+        .query_map([], |row| {
+            Ok(ListedTransaction {
+                date: row.get(0)?,
+                r#type: row.get(1)?,
+                isin: row.get(2)?,
+                quantity: row.get(3)?,
+                share_price: row.get(4)?,
+                order_value: row.get(5)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(transactions)
 }
 
 fn add_asset_raw(asset: &Asset, catgy_assignms: &[CategoryAssignment]) -> eyre::Result<()> {
