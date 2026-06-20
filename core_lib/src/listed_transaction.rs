@@ -8,4 +8,5 @@ pub struct ListedTransaction {
     pub quantity: String,
     pub share_price: String,
     pub order_value: String,
+    pub currency: String,
 }

@@ -582,6 +582,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 ui.strong("Quantity");
                 ui.strong("Share Price");
                 ui.strong("Order Value");
+                ui.strong("Currency");
                 ui.end_row();
 
                 for transaction in &self.listed_transactions {
@@ -591,6 +592,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     ui.label(&transaction.quantity);
                     ui.label(&transaction.share_price);
                     ui.label(&transaction.order_value);
+                    ui.label(&transaction.currency);
                     ui.end_row();
                 }
             });

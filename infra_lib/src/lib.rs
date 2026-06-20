@@ -330,11 +330,13 @@ fn list_transactions_raw(
             assets.isin,
             transactions.quantity,
             transactions.share_price,
-            transactions.order_value
+            transactions.order_value,
+            currencies.code
         FROM transactions
         JOIN dates ON dates.id = transactions.date_id
         JOIN transaction_types ON transaction_types.id = transactions.type_id
         JOIN assets ON assets.id = transactions.asset_id
+        JOIN currencies ON currencies.id = transactions.currency_id
         ORDER BY dates.date DESC, transactions.id DESC
         LIMIT 50
         ",
@@ -348,6 +350,7 @@ fn list_transactions_raw(
                 quantity: row.get(3)?,
                 share_price: row.get(4)?,
                 order_value: row.get(5)?,
+                currency: row.get(6)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
