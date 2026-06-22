@@ -5,7 +5,7 @@ use core_lib::{
     AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
     AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
     ConfigureCatgoriesInput, GetAllocDiagramDataArgs, ListedTransaction, LogTransactionInput,
-    NewCategoryInput, TransactionType, call_macro_with_request_list,
+    NewCategoryInput, PortfolioItem, TransactionType, call_macro_with_request_list,
 };
 use eframe::egui;
 use egui::{TextEdit, TextWrapMode, Widget};
@@ -89,6 +89,7 @@ enum Page {
     AddAllocationRecord,
     LogTransaction,
     ListTransactions,
+    Portfolio,
 }
 
 pub struct PositionItem {
@@ -112,6 +113,7 @@ pub struct EframeApp<B: AppBackend> {
     add_asset_args: AddAssetArgs,
     log_transaction_input: LogTransactionInput,
     listed_transactions: Vec<ListedTransaction>,
+    portfolio_items: Vec<PortfolioItem>,
     cfg_catgs_input: ConfigureCatgoriesInput,
     request_data: RequestData,
     page: Page,
@@ -151,6 +153,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             add_asset_args: AddAssetArgs::default(),
             log_transaction_input: LogTransactionInput::default(),
             listed_transactions: Vec::new(),
+            portfolio_items: Vec::new(),
         };
         app.start_load_png_data(Self::SQUIRREL_IMG_PATH.to_string());
         app.start_get_categories();
@@ -310,6 +313,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
     fn init_list_transactions_page(&mut self) -> eyre::Result<()> {
         self.start_list_transactions();
+        self.message = None;
+        Ok(())
+    }
+
+    fn init_portfolio_page(&mut self) -> eyre::Result<()> {
+        self.start_list_portfolio_items();
         self.message = None;
         Ok(())
     }
@@ -593,6 +602,47 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     ui.label(&transaction.share_price);
                     ui.label(&transaction.order_value);
                     ui.label(&transaction.currency);
+                    ui.end_row();
+                }
+            });
+    }
+
+    fn show_portfolio_page(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("Portfolio")
+                .heading()
+                .size(Self::H2_SIZE),
+        );
+        ui.add_space(Self::SPACE_3);
+
+        if self.portfolio_items.is_empty() {
+            ui.label("No open portfolio items.");
+            return;
+        }
+
+        egui::Grid::new("portfolio_items_grid")
+            .striped(true)
+            .spacing([Self::SPACE_2, Self::SPACE_2])
+            .show(ui, |ui| {
+                ui.strong("Item");
+                ui.strong("Buy Date");
+                ui.strong("ISIN");
+                ui.strong("Initial Qty");
+                ui.strong("Remaining Qty");
+                ui.strong("Share Price");
+                ui.strong("Order Value");
+                ui.strong("Currency");
+                ui.end_row();
+
+                for item in &self.portfolio_items {
+                    ui.label(item.id.to_string());
+                    ui.label(&item.buy_date);
+                    ui.label(&item.isin);
+                    ui.label(&item.initial_quantity);
+                    ui.label(&item.remaining_quantity);
+                    ui.label(&item.share_price);
+                    ui.label(&item.order_value);
+                    ui.label(&item.currency);
                     ui.end_row();
                 }
             });
@@ -910,6 +960,9 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         if let Some(transactions) = self.poll_list_transactions_rx() {
             self.listed_transactions = transactions;
         }
+        if let Some(items) = self.poll_list_portfolio_items_rx() {
+            self.portfolio_items = items;
+        }
     }
 
     fn show_content(&mut self, ui: &mut egui::Ui) {
@@ -959,6 +1012,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     "List Transactions",
                     Self::init_list_transactions_page,
                 );
+                self.show_page_button(ui, Page::Portfolio, "Portfolio", Self::init_portfolio_page);
             });
             ui.add_space(20.0);
             ui.vertical(|ui| {
@@ -972,6 +1026,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                         Page::AddAllocationRecord => self.show_add_allocation_record_page(ui),
                         Page::LogTransaction => self.show_log_transaction_page(ui),
                         Page::ListTransactions => self.show_list_transactions_page(ui),
+                        Page::Portfolio => self.show_portfolio_page(ui),
                     }
                 }
                 ui.add_space(Self::SPACE_3);

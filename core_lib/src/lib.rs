@@ -6,6 +6,7 @@ pub mod category_value;
 pub mod configure_categories_input;
 pub mod listed_transaction;
 pub mod log_transaction_input;
+pub mod portfolio_item;
 pub mod request_list;
 
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,7 @@ pub use crate::configure_categories_input::{
 };
 pub use crate::listed_transaction::ListedTransaction;
 pub use crate::log_transaction_input::{Currency, LogTransactionInput, TransactionType};
+pub use crate::portfolio_item::PortfolioItem;
 
 pub const APP_NAME: &str = "Asset Allocation Tracker";
 

@@ -1,9 +1,9 @@
 use core_lib::{
     AdaptCategoryInput, AllocationRecord, Asset, AssetReference, AssetReferenceType,
     CategoryAssignment, ConfigureCatgoriesInput, Currency, GetAllocDiagramDataArgs,
-    ListedTransaction, NewCategoryInput, TransactionType, add_asset_args::AddAssetArgs,
-    allocation_diagram_data::AllocationDiagramData, category::Category,
-    category_value::CategoryValue, log_transaction_input::LogTransactionInput,
+    ListedTransaction, NewCategoryInput, PortfolioItem, TransactionType,
+    add_asset_args::AddAssetArgs, allocation_diagram_data::AllocationDiagramData,
+    category::Category, category_value::CategoryValue, log_transaction_input::LogTransactionInput,
 };
 use eyre::eyre;
 use rusqlite::{params, types::FromSqlError};
@@ -69,13 +69,34 @@ pub fn add_asset(args: AddAssetArgs) -> eyre::Result<()> {
 
 pub fn log_transaction(input: LogTransactionInput) -> eyre::Result<()> {
     let transaction = validate_log_transaction_input(input)?;
+    if transaction.r#type == TransactionType::Sell {
+        return Err(eyre!(
+            "Sell transactions must be logged from portfolio items"
+        ));
+    }
     let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
     if let Some(parent) = db_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let connection = rusqlite::Connection::open(db_path)?;
+    let mut connection = rusqlite::Connection::open(db_path)?;
     ensure_transactions_schema(&connection)?;
-    insert_transaction(&connection, transaction)
+    let tx = connection.transaction()?;
+    let transaction_type = transaction.r#type;
+    let quantity = transaction.quantity.to_string();
+    let transaction_id = insert_transaction(&tx, transaction)?;
+    if transaction_type == TransactionType::Buy {
+        tx.execute(
+            "
+            INSERT INTO portfolio_items
+                (buy_transaction_id, remaining_quantity)
+            VALUES
+                (?1, ?2)
+            ",
+            params![transaction_id, quantity],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 pub fn list_transactions() -> eyre::Result<Vec<ListedTransaction>> {
@@ -86,6 +107,16 @@ pub fn list_transactions() -> eyre::Result<Vec<ListedTransaction>> {
     let connection = rusqlite::Connection::open(db_path)?;
     ensure_transactions_schema(&connection)?;
     list_transactions_raw(&connection)
+}
+
+pub fn list_portfolio_items() -> eyre::Result<Vec<PortfolioItem>> {
+    let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
+    if let Some(parent) = db_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let connection = rusqlite::Connection::open(db_path)?;
+    ensure_transactions_schema(&connection)?;
+    list_portfolio_items_raw(&connection)
 }
 
 #[derive(Debug)]
@@ -237,13 +268,29 @@ fn ensure_transactions_schema(connection: &rusqlite::Connection) -> eyre::Result
             FOREIGN KEY (currency_id) REFERENCES currencies(id),
             FOREIGN KEY (created_at_date_id) REFERENCES dates(id)
         );
+
+        CREATE TABLE IF NOT EXISTS portfolio_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            buy_transaction_id INTEGER NOT NULL UNIQUE,
+            remaining_quantity TEXT NOT NULL,
+            FOREIGN KEY (buy_transaction_id) REFERENCES transactions(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS portfolio_item_sales (
+            portfolio_item_id INTEGER NOT NULL,
+            sell_transaction_id INTEGER NOT NULL,
+            quantity TEXT NOT NULL,
+            PRIMARY KEY (portfolio_item_id, sell_transaction_id),
+            FOREIGN KEY (portfolio_item_id) REFERENCES portfolio_items(id),
+            FOREIGN KEY (sell_transaction_id) REFERENCES transactions(id)
+        );
         ",
     )?;
     Ok(())
 }
 
 fn get_or_create_id(
-    connection: &rusqlite::Connection,
+    connection: &rusqlite::Transaction<'_>,
     table_name: &str,
     column_name: &str,
     value: &str,
@@ -268,9 +315,9 @@ fn transaction_type_code(transaction_type: TransactionType) -> &'static str {
 }
 
 fn insert_transaction(
-    connection: &rusqlite::Connection,
+    connection: &rusqlite::Transaction<'_>,
     transaction: Transaction,
-) -> eyre::Result<()> {
+) -> eyre::Result<i64> {
     let asset_id = get_or_create_id(connection, "assets", "isin", &transaction.isin)?;
     let transaction_date = transaction.date.to_string();
     let date_id = get_or_create_id(connection, "dates", "date", &transaction_date)?;
@@ -316,7 +363,7 @@ fn insert_transaction(
             created_at_time,
         ],
     )?;
-    Ok(())
+    Ok(connection.last_insert_rowid())
 }
 
 fn list_transactions_raw(
@@ -355,6 +402,56 @@ fn list_transactions_raw(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(transactions)
+}
+
+fn list_portfolio_items_raw(connection: &rusqlite::Connection) -> eyre::Result<Vec<PortfolioItem>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            portfolio_items.id,
+            portfolio_items.buy_transaction_id,
+            dates.date,
+            assets.isin,
+            transactions.quantity,
+            portfolio_items.remaining_quantity,
+            transactions.share_price,
+            transactions.order_value,
+            currencies.code
+        FROM portfolio_items
+        JOIN transactions
+            ON transactions.id = portfolio_items.buy_transaction_id
+        JOIN dates
+            ON dates.id = transactions.date_id
+        JOIN assets
+            ON assets.id = transactions.asset_id
+        JOIN currencies
+            ON currencies.id = transactions.currency_id
+        ORDER BY assets.isin ASC, dates.date ASC, portfolio_items.id ASC
+        ",
+    )?;
+    let items = statement
+        .query_map([], |row| {
+            Ok(PortfolioItem {
+                id: row.get(0)?,
+                buy_transaction_id: row.get(1)?,
+                buy_date: row.get(2)?,
+                isin: row.get(3)?,
+                initial_quantity: row.get(4)?,
+                remaining_quantity: row.get(5)?,
+                share_price: row.get(6)?,
+                order_value: row.get(7)?,
+                currency: row.get(8)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|item| {
+            item.remaining_quantity
+                .parse::<Decimal>()
+                .is_ok_and(|quantity| quantity > Decimal::ZERO)
+        })
+        .collect();
+    Ok(items)
 }
 
 fn add_asset_raw(asset: &Asset, catgy_assignms: &[CategoryAssignment]) -> eyre::Result<()> {
