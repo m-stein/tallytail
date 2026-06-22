@@ -1,7 +1,7 @@
 use core_lib::{
     AdaptCategoryInput, AllocationRecord, Asset, AssetReference, AssetReferenceType,
     CategoryAssignment, ConfigureCatgoriesInput, Currency, GetAllocDiagramDataArgs,
-    ListedTransaction, NewCategoryInput, PortfolioItem, TransactionType,
+    ListedTransaction, NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem, TransactionType,
     add_asset_args::AddAssetArgs, allocation_diagram_data::AllocationDiagramData,
     category::Category, category_value::CategoryValue, log_transaction_input::LogTransactionInput,
 };
@@ -9,7 +9,7 @@ use eyre::eyre;
 use rusqlite::{params, types::FromSqlError};
 use rust_decimal::Decimal;
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -109,14 +109,25 @@ pub fn list_transactions() -> eyre::Result<Vec<ListedTransaction>> {
     list_transactions_raw(&connection)
 }
 
-pub fn list_portfolio_items() -> eyre::Result<Vec<PortfolioItem>> {
+pub fn list_portfolio_overview_items() -> eyre::Result<Vec<PortfolioOverviewItem>> {
     let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
     if let Some(parent) = db_path.parent() {
         fs::create_dir_all(parent)?;
     }
     let connection = rusqlite::Connection::open(db_path)?;
     ensure_transactions_schema(&connection)?;
-    list_portfolio_items_raw(&connection)
+    list_portfolio_overview_items_raw(&connection)
+}
+
+pub fn list_portfolio_isin_items(isin: String) -> eyre::Result<Vec<PortfolioIsinItem>> {
+    let isin = normalize_isin(&isin)?;
+    let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
+    if let Some(parent) = db_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let connection = rusqlite::Connection::open(db_path)?;
+    ensure_transactions_schema(&connection)?;
+    list_portfolio_isin_items_raw(&connection, &isin)
 }
 
 #[derive(Debug)]
@@ -404,7 +415,20 @@ fn list_transactions_raw(
     Ok(transactions)
 }
 
-fn list_portfolio_items_raw(connection: &rusqlite::Connection) -> eyre::Result<Vec<PortfolioItem>> {
+struct QueriedPortfolioItem {
+    id: i64,
+    buy_date: String,
+    isin: String,
+    quantity: String,
+    share_price: String,
+    order_value: String,
+    currency: String,
+}
+
+fn query_portfolio_items(
+    connection: &rusqlite::Connection,
+    isin: Option<&str>,
+) -> eyre::Result<Vec<QueriedPortfolioItem>> {
     let mut statement = connection.prepare(
         "
         SELECT
@@ -426,18 +450,17 @@ fn list_portfolio_items_raw(connection: &rusqlite::Connection) -> eyre::Result<V
             ON assets.id = transactions.asset_id
         JOIN currencies
             ON currencies.id = transactions.currency_id
+        WHERE (?1 IS NULL OR assets.isin = ?1)
         ORDER BY assets.isin ASC, dates.date ASC, portfolio_items.id ASC
         ",
     )?;
     let items = statement
-        .query_map([], |row| {
-            Ok(PortfolioItem {
+        .query_map(params![isin], |row| {
+            Ok(QueriedPortfolioItem {
                 id: row.get(0)?,
-                buy_transaction_id: row.get(1)?,
                 buy_date: row.get(2)?,
                 isin: row.get(3)?,
-                initial_quantity: row.get(4)?,
-                remaining_quantity: row.get(5)?,
+                quantity: row.get(5)?,
                 share_price: row.get(6)?,
                 order_value: row.get(7)?,
                 currency: row.get(8)?,
@@ -446,12 +469,84 @@ fn list_portfolio_items_raw(connection: &rusqlite::Connection) -> eyre::Result<V
         .collect::<rusqlite::Result<Vec<_>>>()?
         .into_iter()
         .filter(|item| {
-            item.remaining_quantity
+            item.quantity
                 .parse::<Decimal>()
                 .is_ok_and(|quantity| quantity > Decimal::ZERO)
         })
         .collect();
     Ok(items)
+}
+
+fn list_portfolio_isin_items_raw(
+    connection: &rusqlite::Connection,
+    isin: &str,
+) -> eyre::Result<Vec<PortfolioIsinItem>> {
+    Ok(query_portfolio_items(connection, Some(isin))?
+        .into_iter()
+        .map(|item| PortfolioIsinItem {
+            buy_date: item.buy_date,
+            quantity: item.quantity,
+            share_price: item.share_price,
+            order_value: item.order_value,
+            currency: item.currency,
+        })
+        .collect())
+}
+
+fn list_portfolio_overview_items_raw(
+    connection: &rusqlite::Connection,
+) -> eyre::Result<Vec<PortfolioOverviewItem>> {
+    struct Accumulator {
+        quantity: Decimal,
+        total_value: Decimal,
+    }
+
+    let mut positions: BTreeMap<(String, String), Accumulator> = BTreeMap::new();
+    for item in query_portfolio_items(connection, None)? {
+        let quantity = item
+            .quantity
+            .parse::<Decimal>()
+            .map_err(|_| eyre!("Invalid remaining quantity for portfolio item {}", item.id))?;
+        let share_price = item
+            .share_price
+            .parse::<Decimal>()
+            .map_err(|_| eyre!("Invalid share price for portfolio item {}", item.id))?;
+        let item_value = quantity
+            .checked_mul(share_price)
+            .ok_or_else(|| eyre!("Portfolio item value is too large"))?;
+
+        let position = positions
+            .entry((item.isin, item.currency))
+            .or_insert(Accumulator {
+                quantity: Decimal::ZERO,
+                total_value: Decimal::ZERO,
+            });
+        position.quantity = position
+            .quantity
+            .checked_add(quantity)
+            .ok_or_else(|| eyre!("Portfolio position quantity is too large"))?;
+        position.total_value = position
+            .total_value
+            .checked_add(item_value)
+            .ok_or_else(|| eyre!("Portfolio position total value is too large"))?;
+    }
+
+    positions
+        .into_iter()
+        .map(|((isin, currency), position)| {
+            let average_share_price = position
+                .total_value
+                .checked_div(position.quantity)
+                .ok_or_else(|| eyre!("Portfolio position quantity must be greater than 0"))?;
+            Ok(PortfolioOverviewItem {
+                isin,
+                quantity: position.quantity.normalize().to_string(),
+                average_share_price: average_share_price.normalize().to_string(),
+                total_value: position.total_value.normalize().to_string(),
+                currency,
+            })
+        })
+        .collect()
 }
 
 fn add_asset_raw(asset: &Asset, catgy_assignms: &[CategoryAssignment]) -> eyre::Result<()> {

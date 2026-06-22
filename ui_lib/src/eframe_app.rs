@@ -5,7 +5,8 @@ use core_lib::{
     AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
     AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
     ConfigureCatgoriesInput, GetAllocDiagramDataArgs, ListedTransaction, LogTransactionInput,
-    NewCategoryInput, PortfolioItem, TransactionType, call_macro_with_request_list,
+    NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem, TransactionType,
+    call_macro_with_request_list,
 };
 use eframe::egui;
 use egui::{TextEdit, TextWrapMode, Widget};
@@ -113,7 +114,9 @@ pub struct EframeApp<B: AppBackend> {
     add_asset_args: AddAssetArgs,
     log_transaction_input: LogTransactionInput,
     listed_transactions: Vec<ListedTransaction>,
-    portfolio_items: Vec<PortfolioItem>,
+    portfolio_overview_items: Vec<PortfolioOverviewItem>,
+    portfolio_isin_items: Vec<PortfolioIsinItem>,
+    portfolio_isin: Option<String>,
     cfg_catgs_input: ConfigureCatgoriesInput,
     request_data: RequestData,
     page: Page,
@@ -124,6 +127,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     const MAX_CONTENT_WIDTH: f32 = 700.;
     const H1_SIZE: f32 = 32.0;
     const H2_SIZE: f32 = 24.0;
+    const H3_SIZE: f32 = 18.0;
     const SPACE_1: f32 = 8.0;
     const SPACE_2: f32 = 12.0;
     const SPACE_3: f32 = 24.0;
@@ -131,6 +135,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     const DEFAULT_INPUT_WIDTH: f32 = 150.0;
     const HELP_POPUP_WIDTH: f32 = 260.0;
     const LOG_TRANSACTION_TYPE_BTN_SIZE: [f32; 2] = [120.0, 36.0];
+    const DECIMAL_DISPLAY_MAX_FRACTION_DIGITS: usize = 10;
     const SYM_BTN_SIZE: f32 = Self::DEFAULT_INPUT_HEIGHT;
     const SQUIRREL_IMG_PATH: &str = "img/squirrel_68x68.png";
 
@@ -153,7 +158,9 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             add_asset_args: AddAssetArgs::default(),
             log_transaction_input: LogTransactionInput::default(),
             listed_transactions: Vec::new(),
-            portfolio_items: Vec::new(),
+            portfolio_overview_items: Vec::new(),
+            portfolio_isin_items: Vec::new(),
+            portfolio_isin: None,
         };
         app.start_load_png_data(Self::SQUIRREL_IMG_PATH.to_string());
         app.start_get_categories();
@@ -318,7 +325,9 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     }
 
     fn init_portfolio_page(&mut self) -> eyre::Result<()> {
-        self.start_list_portfolio_items();
+        self.portfolio_isin = None;
+        self.portfolio_isin_items.clear();
+        self.start_list_portfolio_overview_items();
         self.message = None;
         Ok(())
     }
@@ -389,6 +398,23 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             });
         Self::show_help_if_any(ui, label, help_text);
         ui.end_row();
+    }
+
+    fn format_decimal_for_display(value: &str) -> String {
+        let Some((integer, fraction)) = value.split_once('.') else {
+            return value.to_string();
+        };
+
+        let fraction = &fraction[..fraction
+            .len()
+            .min(Self::DECIMAL_DISPLAY_MAX_FRACTION_DIGITS)];
+        let fraction = fraction.trim_end_matches('0');
+
+        if fraction.is_empty() {
+            integer.to_string()
+        } else {
+            format!("{integer}.{fraction}")
+        }
     }
 
     fn show_log_transaction_type_switch(ui: &mut egui::Ui, value: &mut TransactionType) {
@@ -615,37 +641,88 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         );
         ui.add_space(Self::SPACE_3);
 
-        if self.portfolio_items.is_empty() {
-            ui.label("No open portfolio items.");
+        if let Some(isin) = self.portfolio_isin.clone() {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(isin).heading().size(Self::H3_SIZE));
+                ui.add_space(Self::SPACE_2);
+                if ui
+                    .add_sized(
+                        [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
+                        egui::Button::new("‹"),
+                    )
+                    .clicked()
+                {
+                    self.portfolio_isin = None;
+                    self.portfolio_isin_items.clear();
+                    self.start_list_portfolio_overview_items();
+                }
+            });
+            ui.add_space(Self::SPACE_2);
+
+            if self.portfolio_isin_items.is_empty() {
+                ui.label("No open portfolio items.");
+                return;
+            }
+
+            egui::Grid::new("portfolio_items_grid")
+                .striped(true)
+                .spacing([Self::SPACE_2, Self::SPACE_2])
+                .show(ui, |ui| {
+                    ui.strong("Buy Date");
+                    ui.strong("Quantity");
+                    ui.strong("Share Price");
+                    ui.strong("Order Value");
+                    ui.strong("Currency");
+                    ui.end_row();
+
+                    for item in &self.portfolio_isin_items {
+                        ui.label(&item.buy_date);
+                        ui.label(Self::format_decimal_for_display(&item.quantity));
+                        ui.label(Self::format_decimal_for_display(&item.share_price));
+                        ui.label(Self::format_decimal_for_display(&item.order_value));
+                        ui.label(&item.currency);
+                        ui.end_row();
+                    }
+                });
             return;
         }
 
-        egui::Grid::new("portfolio_items_grid")
+        if self.portfolio_overview_items.is_empty() {
+            ui.label("No open portfolio positions.");
+            return;
+        }
+
+        let mut selected_isin = None;
+        egui::Grid::new("portfolio_positions_grid")
             .striped(true)
             .spacing([Self::SPACE_2, Self::SPACE_2])
             .show(ui, |ui| {
-                ui.strong("Item");
-                ui.strong("Buy Date");
                 ui.strong("ISIN");
-                ui.strong("Initial Qty");
-                ui.strong("Remaining Qty");
-                ui.strong("Share Price");
-                ui.strong("Order Value");
+                ui.strong("Quantity");
+                ui.strong("Average Share Price");
+                ui.strong("Total Value");
                 ui.strong("Currency");
                 ui.end_row();
 
-                for item in &self.portfolio_items {
-                    ui.label(item.id.to_string());
-                    ui.label(&item.buy_date);
-                    ui.label(&item.isin);
-                    ui.label(&item.initial_quantity);
-                    ui.label(&item.remaining_quantity);
-                    ui.label(&item.share_price);
-                    ui.label(&item.order_value);
-                    ui.label(&item.currency);
+                for position in &self.portfolio_overview_items {
+                    if ui.link(&position.isin).clicked() {
+                        selected_isin = Some(position.isin.clone());
+                    }
+                    ui.label(Self::format_decimal_for_display(&position.quantity));
+                    ui.label(Self::format_decimal_for_display(
+                        &position.average_share_price,
+                    ));
+                    ui.label(Self::format_decimal_for_display(&position.total_value));
+                    ui.label(&position.currency);
                     ui.end_row();
                 }
             });
+
+        if let Some(isin) = selected_isin {
+            self.portfolio_isin = Some(isin.clone());
+            self.portfolio_isin_items.clear();
+            self.start_list_portfolio_isin_items(isin);
+        }
     }
 
     fn show_configure_categories_page(&mut self, ui: &mut egui::Ui) {
@@ -960,8 +1037,11 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         if let Some(transactions) = self.poll_list_transactions_rx() {
             self.listed_transactions = transactions;
         }
-        if let Some(items) = self.poll_list_portfolio_items_rx() {
-            self.portfolio_items = items;
+        if let Some(positions) = self.poll_list_portfolio_overview_items_rx() {
+            self.portfolio_overview_items = positions;
+        }
+        if let Some(items) = self.poll_list_portfolio_isin_items_rx() {
+            self.portfolio_isin_items = items;
         }
     }
 

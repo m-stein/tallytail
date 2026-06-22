@@ -9,7 +9,8 @@ macro_rules! call_macro_with_request_list {
             add_asset(core_lib::AddAssetArgs) -> ();
             log_transaction(core_lib::LogTransactionInput) -> ();
             list_transactions() -> Vec<core_lib::ListedTransaction>;
-            list_portfolio_items() -> Vec<core_lib::PortfolioItem>;
+            list_portfolio_overview_items() -> Vec<core_lib::PortfolioOverviewItem>;
+            list_portfolio_isin_items(String) -> Vec<core_lib::PortfolioIsinItem>;
             load_png_data(String) -> Vec<u8>;
             configure_categories(core_lib::ConfigureCatgoriesInput) -> (core_lib::ConfigureCatgoriesInput, Option<String>);
         }
