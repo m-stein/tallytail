@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortfolioIsinItem {
+    pub portfolio_item_id: i64,
     pub buy_date: String,
     pub quantity: String,
     pub share_price: String,

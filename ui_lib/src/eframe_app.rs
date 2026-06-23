@@ -4,7 +4,7 @@ use crate::png::load_png_texture_from_bytes;
 use core_lib::{
     AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
     AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
-    ConfigureCatgoriesInput, Currency, GetAllocDiagramDataArgs, ListedTransaction,
+    ConfigureCatgoriesInput, GetAllocDiagramDataArgs, ListedTransaction, LogSellTransactionInput,
     LogTransactionInput, NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem,
     TransactionType, call_macro_with_request_list,
 };
@@ -117,11 +117,7 @@ pub struct EframeApp<B: AppBackend> {
     portfolio_overview_items: Vec<PortfolioOverviewItem>,
     portfolio_isin_items: Vec<PortfolioIsinItem>,
     portfolio_isin: Option<String>,
-    portfolio_sale_date: Date,
-    portfolio_sale_share_price: String,
-    portfolio_sale_order_value: String,
-    portfolio_sale_currency: Currency,
-    portfolio_sale_quantities: Vec<String>,
+    log_sell_transaction_input: LogSellTransactionInput,
     cfg_catgs_input: ConfigureCatgoriesInput,
     request_data: RequestData,
     page: Page,
@@ -166,11 +162,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             portfolio_overview_items: Vec::new(),
             portfolio_isin_items: Vec::new(),
             portfolio_isin: None,
-            portfolio_sale_date: Zoned::now().date(),
-            portfolio_sale_share_price: String::new(),
-            portfolio_sale_order_value: String::new(),
-            portfolio_sale_currency: Currency::Eur,
-            portfolio_sale_quantities: Vec::new(),
+            log_sell_transaction_input: LogSellTransactionInput::default(),
         };
         app.start_load_png_data(Self::SQUIRREL_IMG_PATH.to_string());
         app.start_get_categories();
@@ -344,16 +336,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     }
 
     fn reset_portfolio_sale_inputs(&mut self) {
-        self.portfolio_sale_date = Zoned::now().date();
-        self.portfolio_sale_share_price.clear();
-        self.portfolio_sale_order_value.clear();
-        self.portfolio_sale_currency = Currency::Eur;
-        self.portfolio_sale_quantities.clear();
-    }
-
-    fn resize_portfolio_sale_quantities(&mut self) {
-        self.portfolio_sale_quantities
-            .resize(self.portfolio_isin_items.len(), String::new());
+        self.log_sell_transaction_input = LogSellTransactionInput::default();
     }
 
     fn reset_add_asset_page(&mut self) {
@@ -701,16 +684,20 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     ui.strong("Quantity");
                     ui.end_row();
 
-                    self.resize_portfolio_sale_quantities();
-                    for (item_idx, item) in self.portfolio_isin_items.iter().enumerate() {
+                    for item in &self.portfolio_isin_items {
                         ui.label(&item.buy_date);
                         ui.label(Self::format_decimal_for_display(&item.quantity));
                         ui.label(Self::format_decimal_for_display(&item.share_price));
                         ui.label(Self::format_decimal_for_display(&item.order_value));
                         ui.label(&item.currency);
+                        let quantity = self
+                            .log_sell_transaction_input
+                            .portfolio_item_id_to_quantity
+                            .entry(item.portfolio_item_id)
+                            .or_default();
                         ui.add_sized(
                             [Self::DEFAULT_INPUT_WIDTH, Self::DEFAULT_INPUT_HEIGHT],
-                            TextEdit::singleline(&mut self.portfolio_sale_quantities[item_idx]),
+                            TextEdit::singleline(quantity),
                         );
                         ui.end_row();
                     }
@@ -724,40 +711,36 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     Self::show_widget_input_row(
                         ui,
                         "Date",
-                        DatePickerButton::new(&mut self.portfolio_sale_date),
+                        DatePickerButton::new(&mut self.log_sell_transaction_input.date),
                         None,
                     );
                     Self::show_widget_input_row(
                         ui,
                         "Share price",
-                        TextEdit::singleline(&mut self.portfolio_sale_share_price),
+                        TextEdit::singleline(&mut self.log_sell_transaction_input.share_price),
                         None,
                     );
                     Self::show_widget_input_row(
                         ui,
                         "Order value",
-                        TextEdit::singleline(&mut self.portfolio_sale_order_value),
+                        TextEdit::singleline(&mut self.log_sell_transaction_input.order_value),
                         None,
                     );
                     Self::show_enum_input_row(
                         ui,
                         "Currency",
-                        &mut self.portfolio_sale_currency,
+                        &mut self.log_sell_transaction_input.currency,
                         None,
                     );
                 });
 
             ui.add_space(Self::SPACE_3);
             if ui.button("Log Sale").clicked() {
-                eprintln!(
-                    "Log Sale: isin={isin}, date={}, share_price={}, order_value={}, currency={}, quantities={:?}",
-                    self.portfolio_sale_date,
-                    self.portfolio_sale_share_price,
-                    self.portfolio_sale_order_value,
-                    self.portfolio_sale_currency,
-                    self.portfolio_sale_quantities
-                );
-                self.message = Some("Sale logged to frontend output".into());
+                self.log_sell_transaction_input.isin = isin.clone();
+                self.log_sell_transaction_input
+                    .portfolio_item_id_to_quantity
+                    .retain(|_, quantity| !quantity.trim().is_empty());
+                self.start_log_sell_transaction(self.log_sell_transaction_input.clone());
             }
             return;
         }
@@ -797,6 +780,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             self.portfolio_isin = Some(isin.clone());
             self.portfolio_isin_items.clear();
             self.reset_portfolio_sale_inputs();
+            self.log_sell_transaction_input.isin = isin.clone();
             self.start_list_portfolio_isin_items(isin);
         }
     }
@@ -1110,6 +1094,15 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             self.message = Some("Transaction logged".into());
             self.reset_log_transaction_page();
         }
+        if self.poll_log_sell_transaction_rx().is_some() {
+            self.message = Some("Sale logged".into());
+            self.reset_portfolio_sale_inputs();
+            if let Some(isin) = self.portfolio_isin.clone() {
+                self.start_list_portfolio_isin_items(isin);
+            } else {
+                self.start_list_portfolio_overview_items();
+            }
+        }
         if let Some(transactions) = self.poll_list_transactions_rx() {
             self.listed_transactions = transactions;
         }
@@ -1118,7 +1111,6 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         }
         if let Some(items) = self.poll_list_portfolio_isin_items_rx() {
             self.portfolio_isin_items = items;
-            self.resize_portfolio_sale_quantities();
         }
     }
 

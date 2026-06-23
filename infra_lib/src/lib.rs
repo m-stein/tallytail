@@ -1,9 +1,10 @@
 use core_lib::{
     AdaptCategoryInput, AllocationRecord, Asset, AssetReference, AssetReferenceType,
     CategoryAssignment, ConfigureCatgoriesInput, Currency, GetAllocDiagramDataArgs,
-    ListedTransaction, NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem, TransactionType,
-    add_asset_args::AddAssetArgs, allocation_diagram_data::AllocationDiagramData,
-    category::Category, category_value::CategoryValue, log_transaction_input::LogTransactionInput,
+    ListedTransaction, LogSellTransactionInput, NewCategoryInput, PortfolioIsinItem,
+    PortfolioOverviewItem, TransactionType, add_asset_args::AddAssetArgs,
+    allocation_diagram_data::AllocationDiagramData, category::Category,
+    category_value::CategoryValue, log_transaction_input::LogTransactionInput,
 };
 use eyre::eyre;
 use rusqlite::{params, types::FromSqlError};
@@ -99,6 +100,83 @@ pub fn log_transaction(input: LogTransactionInput) -> eyre::Result<()> {
     Ok(())
 }
 
+pub fn log_sell_transaction(input: LogSellTransactionInput) -> eyre::Result<()> {
+    let sell_transaction = validate_log_sell_transaction_input(input)?;
+    let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
+    if let Some(parent) = db_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut connection = rusqlite::Connection::open(db_path)?;
+    ensure_transactions_schema(&connection)?;
+    let tx = connection.transaction()?;
+
+    let asset_id = get_or_create_id(&tx, "assets", "isin", &sell_transaction.transaction.isin)?;
+    for (portfolio_item_id, quantity) in &sell_transaction.portfolio_item_id_to_quantity {
+        let (item_asset_id, remaining_quantity, buy_date): (i64, String, String) = tx.query_row(
+            "
+            SELECT transactions.asset_id, portfolio_items.remaining_quantity, dates.date
+            FROM portfolio_items
+            JOIN transactions
+                ON transactions.id = portfolio_items.buy_transaction_id
+            JOIN dates
+                ON dates.id = transactions.date_id
+            WHERE portfolio_items.id = ?1
+            ",
+            params![portfolio_item_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+        if item_asset_id != asset_id {
+            return Err(eyre!("Portfolio item does not belong to ISIN"));
+        }
+        let buy_date = jiff::civil::Date::strptime("%Y-%m-%d", &buy_date)?;
+        if sell_transaction.transaction.date < buy_date {
+            return Err(eyre!("Sell date must not be before buy date"));
+        }
+        let remaining_quantity = remaining_quantity
+            .parse::<Decimal>()
+            .map_err(|_| eyre!("Invalid remaining quantity for portfolio item"))?;
+        if *quantity > remaining_quantity {
+            return Err(eyre!("Sell quantity exceeds remaining quantity"));
+        }
+    }
+
+    let sell_transaction_id = insert_transaction(&tx, sell_transaction.transaction)?;
+    for (portfolio_item_id, quantity) in sell_transaction.portfolio_item_id_to_quantity {
+        tx.execute(
+            "
+            INSERT INTO portfolio_item_sales
+                (portfolio_item_id, sell_transaction_id, quantity)
+            VALUES
+                (?1, ?2, ?3)
+            ",
+            params![portfolio_item_id, sell_transaction_id, quantity.to_string()],
+        )?;
+
+        let remaining_quantity: String = tx.query_row(
+            "SELECT remaining_quantity FROM portfolio_items WHERE id = ?1",
+            params![portfolio_item_id],
+            |row| row.get(0),
+        )?;
+        let remaining_quantity = remaining_quantity
+            .parse::<Decimal>()
+            .map_err(|_| eyre!("Invalid remaining quantity for portfolio item"))?;
+        let new_remaining_quantity = remaining_quantity
+            .checked_sub(quantity)
+            .ok_or_else(|| eyre!("Remaining quantity is too small"))?;
+        tx.execute(
+            "
+            UPDATE portfolio_items
+            SET remaining_quantity = ?1
+            WHERE id = ?2
+            ",
+            params![new_remaining_quantity.to_string(), portfolio_item_id],
+        )?;
+    }
+
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn list_transactions() -> eyre::Result<Vec<ListedTransaction>> {
     let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
     if let Some(parent) = db_path.parent() {
@@ -141,6 +219,12 @@ struct Transaction {
     order_value: Decimal,
 }
 
+#[derive(Debug)]
+struct SellTransaction {
+    transaction: Transaction,
+    portfolio_item_id_to_quantity: BTreeMap<i64, Decimal>,
+}
+
 fn validate_log_transaction_input(input: LogTransactionInput) -> eyre::Result<Transaction> {
     if input.date > jiff::Zoned::now().date() {
         return Err(eyre!("Transaction date must not be in the future"));
@@ -181,6 +265,63 @@ fn validate_log_transaction_input(input: LogTransactionInput) -> eyre::Result<Tr
         quantity,
         share_price,
         order_value,
+    })
+}
+
+fn validate_log_sell_transaction_input(
+    input: LogSellTransactionInput,
+) -> eyre::Result<SellTransaction> {
+    if input.date > jiff::Zoned::now().date() {
+        return Err(eyre!("Transaction date must not be in the future"));
+    }
+    let isin = normalize_isin(&input.isin)?;
+    let share_price = parse_transaction_decimal("Share price", &input.share_price)?;
+    let order_value = parse_transaction_decimal("Order value", &input.order_value)?;
+
+    if share_price <= Decimal::ZERO {
+        return Err(eyre!("Share price must be greater than 0"));
+    }
+    if order_value <= Decimal::ZERO {
+        return Err(eyre!("Order value must be greater than 0"));
+    }
+
+    let mut total_quantity = Decimal::ZERO;
+    let mut quantities = BTreeMap::new();
+    for (portfolio_item_id, quantity_input) in input.portfolio_item_id_to_quantity {
+        let quantity = parse_transaction_decimal("Quantity", &quantity_input)?;
+        if quantity <= Decimal::ZERO {
+            return Err(eyre!("Quantity must be greater than 0"));
+        }
+        total_quantity = total_quantity
+            .checked_add(quantity)
+            .ok_or_else(|| eyre!("Total quantity is too large"))?;
+        quantities.insert(portfolio_item_id, quantity);
+    }
+
+    if quantities.is_empty() {
+        return Err(eyre!("At least one sell quantity is required"));
+    }
+
+    let trade_value = total_quantity
+        .checked_mul(share_price)
+        .ok_or_else(|| eyre!("Quantity * share price is too large"))?;
+    if order_value > trade_value {
+        return Err(eyre!(
+            "Order value must be less than or equal to quantity * share price"
+        ));
+    }
+
+    Ok(SellTransaction {
+        transaction: Transaction {
+            r#type: TransactionType::Sell,
+            currency: input.currency,
+            date: input.date,
+            isin,
+            quantity: total_quantity,
+            share_price,
+            order_value,
+        },
+        portfolio_item_id_to_quantity: quantities,
     })
 }
 
@@ -484,6 +625,7 @@ fn list_portfolio_isin_items_raw(
     Ok(query_portfolio_items(connection, Some(isin))?
         .into_iter()
         .map(|item| PortfolioIsinItem {
+            portfolio_item_id: item.id,
             buy_date: item.buy_date,
             quantity: item.quantity,
             share_price: item.share_price,
@@ -808,8 +950,9 @@ mod tests {
     use super::*;
     use core_lib::TransactionType;
     use jiff::Zoned;
+    use std::collections::HashMap;
 
-    fn valid_input() -> LogTransactionInput {
+    fn valid_log_transaction_input() -> LogTransactionInput {
         LogTransactionInput {
             r#type: TransactionType::Buy,
             currency: Currency::Eur,
@@ -818,6 +961,17 @@ mod tests {
             quantity: "2.5".to_string(),
             share_price: "100.00".to_string(),
             order_value: "250.00".to_string(),
+        }
+    }
+
+    fn valid_log_sell_transaction_input() -> LogSellTransactionInput {
+        LogSellTransactionInput {
+            currency: Currency::Eur,
+            date: Zoned::now().date(),
+            isin: "US0378331005".to_string(),
+            portfolio_item_id_to_quantity: HashMap::from([(1, "1.5".to_string())]),
+            share_price: "100.00".to_string(),
+            order_value: "149.99".to_string(),
         }
     }
 
@@ -833,7 +987,7 @@ mod tests {
 
     #[test]
     fn rejects_future_transaction_date() {
-        let mut input = valid_input();
+        let mut input = valid_log_transaction_input();
         input.date = Zoned::now().tomorrow().unwrap().date();
 
         let err = validate_log_transaction_input(input)
@@ -845,7 +999,7 @@ mod tests {
 
     #[test]
     fn rejects_order_value_below_quantity_times_share_price() {
-        let mut input = valid_input();
+        let mut input = valid_log_transaction_input();
         input.order_value = "249.99".to_string();
 
         let err = validate_log_transaction_input(input)
@@ -857,7 +1011,7 @@ mod tests {
 
     #[test]
     fn accepts_sell_order_value_below_quantity_times_share_price() {
-        let mut input = valid_input();
+        let mut input = valid_log_transaction_input();
         input.r#type = TransactionType::Sell;
         input.order_value = "249.99".to_string();
 
@@ -866,7 +1020,7 @@ mod tests {
 
     #[test]
     fn rejects_sell_order_value_above_quantity_times_share_price() {
-        let mut input = valid_input();
+        let mut input = valid_log_transaction_input();
         input.r#type = TransactionType::Sell;
         input.order_value = "250.01".to_string();
 
@@ -880,7 +1034,7 @@ mod tests {
     #[test]
     fn rejects_quantity_less_than_or_equal_to_zero() {
         for quantity in ["0", "-1"] {
-            let mut input = valid_input();
+            let mut input = valid_log_transaction_input();
             input.quantity = quantity.to_string();
 
             let err = validate_log_transaction_input(input)
@@ -894,7 +1048,7 @@ mod tests {
     #[test]
     fn rejects_share_price_less_than_or_equal_to_zero() {
         for share_price in ["0", "-1"] {
-            let mut input = valid_input();
+            let mut input = valid_log_transaction_input();
             input.share_price = share_price.to_string();
 
             let err = validate_log_transaction_input(input)
@@ -907,7 +1061,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_quantity_decimal_format() {
-        let mut input = valid_input();
+        let mut input = valid_log_transaction_input();
         input.quantity = "not-a-decimal".to_string();
 
         let err = validate_log_transaction_input(input)
@@ -919,7 +1073,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_share_price_decimal_format() {
-        let mut input = valid_input();
+        let mut input = valid_log_transaction_input();
         input.share_price = "not-a-decimal".to_string();
 
         let err = validate_log_transaction_input(input)
@@ -931,7 +1085,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_order_value_decimal_format() {
-        let mut input = valid_input();
+        let mut input = valid_log_transaction_input();
         input.order_value = "not-a-decimal".to_string();
 
         let err = validate_log_transaction_input(input)
@@ -939,5 +1093,128 @@ mod tests {
             .to_string();
 
         assert!(err.contains("Order value must be a valid decimal number"));
+    }
+
+    #[test]
+    fn accepts_valid_sell_transaction_input() {
+        validate_log_sell_transaction_input(valid_log_sell_transaction_input()).unwrap();
+    }
+
+    #[test]
+    fn rejects_sell_transaction_without_quantities() {
+        let mut input = valid_log_sell_transaction_input();
+        input.portfolio_item_id_to_quantity.clear();
+
+        let err = validate_log_sell_transaction_input(input)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("At least one sell quantity"));
+    }
+
+    #[test]
+    fn rejects_sell_transaction_future_date() {
+        let mut input = valid_log_sell_transaction_input();
+        input.date = Zoned::now().tomorrow().unwrap().date();
+
+        let err = validate_log_sell_transaction_input(input)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("future"));
+    }
+
+    #[test]
+    fn rejects_sell_transaction_invalid_quantity_decimal_format() {
+        let mut input = valid_log_sell_transaction_input();
+        input
+            .portfolio_item_id_to_quantity
+            .insert(1, "not-a-decimal".to_string());
+
+        let err = validate_log_sell_transaction_input(input)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("Quantity must be a valid decimal number"));
+    }
+
+    #[test]
+    fn rejects_sell_transaction_quantity_less_than_or_equal_to_zero() {
+        for quantity in ["0", "-1"] {
+            let mut input = valid_log_sell_transaction_input();
+            input
+                .portfolio_item_id_to_quantity
+                .insert(1, quantity.to_string());
+
+            let err = validate_log_sell_transaction_input(input)
+                .unwrap_err()
+                .to_string();
+
+            assert!(err.contains("Quantity must be greater than 0"));
+        }
+    }
+
+    #[test]
+    fn rejects_sell_transaction_share_price_less_than_or_equal_to_zero() {
+        for share_price in ["0", "-1"] {
+            let mut input = valid_log_sell_transaction_input();
+            input.share_price = share_price.to_string();
+
+            let err = validate_log_sell_transaction_input(input)
+                .unwrap_err()
+                .to_string();
+
+            assert!(err.contains("Share price must be greater than 0"));
+        }
+    }
+
+    #[test]
+    fn rejects_sell_transaction_order_value_less_than_or_equal_to_zero() {
+        for order_value in ["0", "-1"] {
+            let mut input = valid_log_sell_transaction_input();
+            input.order_value = order_value.to_string();
+
+            let err = validate_log_sell_transaction_input(input)
+                .unwrap_err()
+                .to_string();
+
+            assert!(err.contains("Order value must be greater than 0"));
+        }
+    }
+
+    #[test]
+    fn rejects_sell_transaction_invalid_share_price_decimal_format() {
+        let mut input = valid_log_sell_transaction_input();
+        input.share_price = "not-a-decimal".to_string();
+
+        let err = validate_log_sell_transaction_input(input)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("Share price must be a valid decimal number"));
+    }
+
+    #[test]
+    fn rejects_sell_transaction_invalid_order_value_decimal_format() {
+        let mut input = valid_log_sell_transaction_input();
+        input.order_value = "not-a-decimal".to_string();
+
+        let err = validate_log_sell_transaction_input(input)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("Order value must be a valid decimal number"));
+    }
+
+    #[test]
+    fn rejects_sell_transaction_order_value_above_quantity_times_share_price() {
+        let mut input = valid_log_sell_transaction_input();
+        input.order_value = "150.01".to_string();
+
+        let err = validate_log_sell_transaction_input(input)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("quantity * share price"));
     }
 }
