@@ -4,9 +4,9 @@ use crate::png::load_png_texture_from_bytes;
 use core_lib::{
     AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
     AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
-    ConfigureCatgoriesInput, GetAllocDiagramDataArgs, ListedTransaction, LogTransactionInput,
-    NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem, TransactionType,
-    call_macro_with_request_list,
+    ConfigureCatgoriesInput, Currency, GetAllocDiagramDataArgs, ListedTransaction,
+    LogTransactionInput, NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem,
+    TransactionType, call_macro_with_request_list,
 };
 use eframe::egui;
 use egui::{TextEdit, TextWrapMode, Widget};
@@ -117,6 +117,11 @@ pub struct EframeApp<B: AppBackend> {
     portfolio_overview_items: Vec<PortfolioOverviewItem>,
     portfolio_isin_items: Vec<PortfolioIsinItem>,
     portfolio_isin: Option<String>,
+    portfolio_sale_date: Date,
+    portfolio_sale_share_price: String,
+    portfolio_sale_order_value: String,
+    portfolio_sale_currency: Currency,
+    portfolio_sale_quantities: Vec<String>,
     cfg_catgs_input: ConfigureCatgoriesInput,
     request_data: RequestData,
     page: Page,
@@ -161,6 +166,11 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             portfolio_overview_items: Vec::new(),
             portfolio_isin_items: Vec::new(),
             portfolio_isin: None,
+            portfolio_sale_date: Zoned::now().date(),
+            portfolio_sale_share_price: String::new(),
+            portfolio_sale_order_value: String::new(),
+            portfolio_sale_currency: Currency::Eur,
+            portfolio_sale_quantities: Vec::new(),
         };
         app.start_load_png_data(Self::SQUIRREL_IMG_PATH.to_string());
         app.start_get_categories();
@@ -327,9 +337,23 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     fn init_portfolio_page(&mut self) -> eyre::Result<()> {
         self.portfolio_isin = None;
         self.portfolio_isin_items.clear();
+        self.reset_portfolio_sale_inputs();
         self.start_list_portfolio_overview_items();
         self.message = None;
         Ok(())
+    }
+
+    fn reset_portfolio_sale_inputs(&mut self) {
+        self.portfolio_sale_date = Zoned::now().date();
+        self.portfolio_sale_share_price.clear();
+        self.portfolio_sale_order_value.clear();
+        self.portfolio_sale_currency = Currency::Eur;
+        self.portfolio_sale_quantities.clear();
+    }
+
+    fn resize_portfolio_sale_quantities(&mut self) {
+        self.portfolio_sale_quantities
+            .resize(self.portfolio_isin_items.len(), String::new());
     }
 
     fn reset_add_asset_page(&mut self) {
@@ -643,7 +667,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
         if let Some(isin) = self.portfolio_isin.clone() {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(isin).heading().size(Self::H3_SIZE));
+                ui.label(egui::RichText::new(&isin).heading().size(Self::H3_SIZE));
                 ui.add_space(Self::SPACE_2);
                 if ui
                     .add_sized(
@@ -654,10 +678,11 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 {
                     self.portfolio_isin = None;
                     self.portfolio_isin_items.clear();
+                    self.reset_portfolio_sale_inputs();
                     self.start_list_portfolio_overview_items();
                 }
             });
-            ui.add_space(Self::SPACE_2);
+            ui.add_space(Self::SPACE_3);
 
             if self.portfolio_isin_items.is_empty() {
                 ui.label("No open portfolio items.");
@@ -673,17 +698,67 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     ui.strong("Share Price");
                     ui.strong("Order Value");
                     ui.strong("Currency");
+                    ui.strong("Quantity");
                     ui.end_row();
 
-                    for item in &self.portfolio_isin_items {
+                    self.resize_portfolio_sale_quantities();
+                    for (item_idx, item) in self.portfolio_isin_items.iter().enumerate() {
                         ui.label(&item.buy_date);
                         ui.label(Self::format_decimal_for_display(&item.quantity));
                         ui.label(Self::format_decimal_for_display(&item.share_price));
                         ui.label(Self::format_decimal_for_display(&item.order_value));
                         ui.label(&item.currency);
+                        ui.add_sized(
+                            [Self::DEFAULT_INPUT_WIDTH, Self::DEFAULT_INPUT_HEIGHT],
+                            TextEdit::singleline(&mut self.portfolio_sale_quantities[item_idx]),
+                        );
                         ui.end_row();
                     }
                 });
+
+            ui.add_space(Self::SPACE_3);
+            egui::Grid::new("portfolio_sale_input_grid")
+                .num_columns(3)
+                .spacing([Self::SPACE_2, Self::SPACE_2])
+                .show(ui, |ui| {
+                    Self::show_widget_input_row(
+                        ui,
+                        "Date",
+                        DatePickerButton::new(&mut self.portfolio_sale_date),
+                        None,
+                    );
+                    Self::show_widget_input_row(
+                        ui,
+                        "Share price",
+                        TextEdit::singleline(&mut self.portfolio_sale_share_price),
+                        None,
+                    );
+                    Self::show_widget_input_row(
+                        ui,
+                        "Order value",
+                        TextEdit::singleline(&mut self.portfolio_sale_order_value),
+                        None,
+                    );
+                    Self::show_enum_input_row(
+                        ui,
+                        "Currency",
+                        &mut self.portfolio_sale_currency,
+                        None,
+                    );
+                });
+
+            ui.add_space(Self::SPACE_3);
+            if ui.button("Log Sale").clicked() {
+                eprintln!(
+                    "Log Sale: isin={isin}, date={}, share_price={}, order_value={}, currency={}, quantities={:?}",
+                    self.portfolio_sale_date,
+                    self.portfolio_sale_share_price,
+                    self.portfolio_sale_order_value,
+                    self.portfolio_sale_currency,
+                    self.portfolio_sale_quantities
+                );
+                self.message = Some("Sale logged to frontend output".into());
+            }
             return;
         }
 
@@ -721,6 +796,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         if let Some(isin) = selected_isin {
             self.portfolio_isin = Some(isin.clone());
             self.portfolio_isin_items.clear();
+            self.reset_portfolio_sale_inputs();
             self.start_list_portfolio_isin_items(isin);
         }
     }
@@ -1042,6 +1118,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         }
         if let Some(items) = self.poll_list_portfolio_isin_items_rx() {
             self.portfolio_isin_items = items;
+            self.resize_portfolio_sale_quantities();
         }
     }
 
