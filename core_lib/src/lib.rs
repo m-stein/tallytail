@@ -20,12 +20,16 @@ pub use crate::configure_categories_input::{
     AdaptCategoryInput, CategoryValueInput, ConfigureCatgoriesInput, NewCategoryInput,
 };
 pub use crate::listed_transaction::ListedTransaction;
-pub use crate::log_transaction_input::{
-    Currency, LogSellTransactionInput, LogTransactionInput, TransactionType,
-};
+pub use crate::log_transaction_input::{Currency, LogBuyTransactionInput, LogSellTransactionInput};
 pub use crate::portfolio_item::{PortfolioIsinItem, PortfolioOverviewItem};
 
 pub const APP_NAME: &str = "Asset Allocation Tracker";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TransactionType {
+    Buy,
+    Sell,
+}
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, EnumIter, Serialize, Deserialize, EnumString, Display,

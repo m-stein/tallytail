@@ -7,7 +7,7 @@ macro_rules! call_macro_with_request_list {
             get_latest_record() -> Option<core_lib::AllocationRecord>;
             get_alloc_diagram_data(core_lib::GetAllocDiagramDataArgs) -> core_lib::AllocationDiagramData;
             add_asset(core_lib::AddAssetArgs) -> ();
-            log_transaction(core_lib::LogTransactionInput) -> ();
+            log_buy_transaction(core_lib::LogBuyTransactionInput) -> ();
             log_sell_transaction(core_lib::LogSellTransactionInput) -> ();
             list_transactions() -> Vec<core_lib::ListedTransaction>;
             list_portfolio_overview_items() -> Vec<core_lib::PortfolioOverviewItem>;

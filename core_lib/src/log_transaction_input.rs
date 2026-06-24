@@ -3,12 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use strum_macros::{Display, EnumIter};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TransactionType {
-    Buy,
-    Sell,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumIter, Display)]
 pub enum Currency {
     #[strum(serialize = "EUR")]
@@ -18,14 +12,26 @@ pub enum Currency {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogTransactionInput {
-    pub r#type: TransactionType,
+pub struct LogBuyTransactionInput {
     pub currency: Currency,
     pub isin: String,
     pub quantity: String,
     pub share_price: String,
     pub order_value: String,
     pub date: Date,
+}
+
+impl Default for LogBuyTransactionInput {
+    fn default() -> Self {
+        Self {
+            currency: Currency::Eur,
+            date: Zoned::now().date(),
+            isin: String::new(),
+            quantity: String::new(),
+            share_price: String::new(),
+            order_value: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,20 +53,6 @@ impl Default for LogSellTransactionInput {
             share_price: String::new(),
             order_value: String::new(),
             date: Zoned::now().date(),
-        }
-    }
-}
-
-impl Default for LogTransactionInput {
-    fn default() -> Self {
-        Self {
-            r#type: TransactionType::Buy,
-            currency: Currency::Eur,
-            date: Zoned::now().date(),
-            isin: String::new(),
-            quantity: String::new(),
-            share_price: String::new(),
-            order_value: String::new(),
         }
     }
 }

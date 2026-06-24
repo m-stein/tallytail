@@ -1,10 +1,10 @@
 use core_lib::{
     AdaptCategoryInput, AllocationRecord, Asset, AssetReference, AssetReferenceType,
     CategoryAssignment, ConfigureCatgoriesInput, Currency, GetAllocDiagramDataArgs,
-    ListedTransaction, LogSellTransactionInput, NewCategoryInput, PortfolioIsinItem,
-    PortfolioOverviewItem, TransactionType, add_asset_args::AddAssetArgs,
+    ListedTransaction, LogBuyTransactionInput, LogSellTransactionInput, NewCategoryInput,
+    PortfolioIsinItem, PortfolioOverviewItem, TransactionType, add_asset_args::AddAssetArgs,
     allocation_diagram_data::AllocationDiagramData, category::Category,
-    category_value::CategoryValue, log_transaction_input::LogTransactionInput,
+    category_value::CategoryValue,
 };
 use eyre::eyre;
 use rusqlite::{params, types::FromSqlError};
@@ -68,13 +68,8 @@ pub fn add_asset(args: AddAssetArgs) -> eyre::Result<()> {
     add_asset_raw(&asset, &catgy_assignms)
 }
 
-pub fn log_transaction(input: LogTransactionInput) -> eyre::Result<()> {
-    let transaction = validate_log_transaction_input(input)?;
-    if transaction.r#type == TransactionType::Sell {
-        return Err(eyre!(
-            "Sell transactions must be logged from portfolio items"
-        ));
-    }
+pub fn log_buy_transaction(input: LogBuyTransactionInput) -> eyre::Result<()> {
+    let transaction = validate_log_buy_transaction_input(input)?;
     let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
     if let Some(parent) = db_path.parent() {
         fs::create_dir_all(parent)?;
@@ -82,20 +77,17 @@ pub fn log_transaction(input: LogTransactionInput) -> eyre::Result<()> {
     let mut connection = rusqlite::Connection::open(db_path)?;
     ensure_transactions_schema(&connection)?;
     let tx = connection.transaction()?;
-    let transaction_type = transaction.r#type;
     let quantity = transaction.quantity.to_string();
     let transaction_id = insert_transaction(&tx, transaction)?;
-    if transaction_type == TransactionType::Buy {
-        tx.execute(
-            "
-            INSERT INTO portfolio_items
-                (buy_transaction_id, remaining_quantity)
-            VALUES
-                (?1, ?2)
-            ",
-            params![transaction_id, quantity],
-        )?;
-    }
+    tx.execute(
+        "
+        INSERT INTO portfolio_items
+            (buy_transaction_id, remaining_quantity)
+        VALUES
+            (?1, ?2)
+        ",
+        params![transaction_id, quantity],
+    )?;
     tx.commit()?;
     Ok(())
 }
@@ -225,7 +217,7 @@ struct SellTransaction {
     portfolio_item_id_to_quantity: BTreeMap<i64, Decimal>,
 }
 
-fn validate_log_transaction_input(input: LogTransactionInput) -> eyre::Result<Transaction> {
+fn validate_log_buy_transaction_input(input: LogBuyTransactionInput) -> eyre::Result<Transaction> {
     if input.date > jiff::Zoned::now().date() {
         return Err(eyre!("Transaction date must not be in the future"));
     }
@@ -243,22 +235,14 @@ fn validate_log_transaction_input(input: LogTransactionInput) -> eyre::Result<Tr
     let trade_value = quantity
         .checked_mul(share_price)
         .ok_or_else(|| eyre!("Quantity * share price is too large"))?;
-    match input.r#type {
-        TransactionType::Buy if order_value < trade_value => {
-            return Err(eyre!(
-                "Order value must be greater than or equal to quantity * share price"
-            ));
-        }
-        TransactionType::Sell if order_value > trade_value => {
-            return Err(eyre!(
-                "Order value must be less than or equal to quantity * share price"
-            ));
-        }
-        _ => {}
+    if order_value < trade_value {
+        return Err(eyre!(
+            "Order value must be greater than or equal to quantity * share price"
+        ));
     }
 
     Ok(Transaction {
-        r#type: input.r#type,
+        r#type: TransactionType::Buy,
         currency: input.currency,
         date: input.date,
         isin,
@@ -948,13 +932,11 @@ pub fn configure_categories(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_lib::TransactionType;
     use jiff::Zoned;
     use std::collections::HashMap;
 
-    fn valid_log_transaction_input() -> LogTransactionInput {
-        LogTransactionInput {
-            r#type: TransactionType::Buy,
+    fn valid_log_buy_transaction_input() -> LogBuyTransactionInput {
+        LogBuyTransactionInput {
             currency: Currency::Eur,
             date: Zoned::now().date(),
             isin: "US0378331005".to_string(),
@@ -987,10 +969,10 @@ mod tests {
 
     #[test]
     fn rejects_future_transaction_date() {
-        let mut input = valid_log_transaction_input();
+        let mut input = valid_log_buy_transaction_input();
         input.date = Zoned::now().tomorrow().unwrap().date();
 
-        let err = validate_log_transaction_input(input)
+        let err = validate_log_buy_transaction_input(input)
             .unwrap_err()
             .to_string();
 
@@ -998,33 +980,11 @@ mod tests {
     }
 
     #[test]
-    fn rejects_order_value_below_quantity_times_share_price() {
-        let mut input = valid_log_transaction_input();
+    fn rejects_buy_order_value_below_quantity_times_share_price() {
+        let mut input = valid_log_buy_transaction_input();
         input.order_value = "249.99".to_string();
 
-        let err = validate_log_transaction_input(input)
-            .unwrap_err()
-            .to_string();
-
-        assert!(err.contains("quantity * share price"));
-    }
-
-    #[test]
-    fn accepts_sell_order_value_below_quantity_times_share_price() {
-        let mut input = valid_log_transaction_input();
-        input.r#type = TransactionType::Sell;
-        input.order_value = "249.99".to_string();
-
-        validate_log_transaction_input(input).unwrap();
-    }
-
-    #[test]
-    fn rejects_sell_order_value_above_quantity_times_share_price() {
-        let mut input = valid_log_transaction_input();
-        input.r#type = TransactionType::Sell;
-        input.order_value = "250.01".to_string();
-
-        let err = validate_log_transaction_input(input)
+        let err = validate_log_buy_transaction_input(input)
             .unwrap_err()
             .to_string();
 
@@ -1034,10 +994,10 @@ mod tests {
     #[test]
     fn rejects_quantity_less_than_or_equal_to_zero() {
         for quantity in ["0", "-1"] {
-            let mut input = valid_log_transaction_input();
+            let mut input = valid_log_buy_transaction_input();
             input.quantity = quantity.to_string();
 
-            let err = validate_log_transaction_input(input)
+            let err = validate_log_buy_transaction_input(input)
                 .unwrap_err()
                 .to_string();
 
@@ -1048,10 +1008,10 @@ mod tests {
     #[test]
     fn rejects_share_price_less_than_or_equal_to_zero() {
         for share_price in ["0", "-1"] {
-            let mut input = valid_log_transaction_input();
+            let mut input = valid_log_buy_transaction_input();
             input.share_price = share_price.to_string();
 
-            let err = validate_log_transaction_input(input)
+            let err = validate_log_buy_transaction_input(input)
                 .unwrap_err()
                 .to_string();
 
@@ -1061,10 +1021,10 @@ mod tests {
 
     #[test]
     fn rejects_invalid_quantity_decimal_format() {
-        let mut input = valid_log_transaction_input();
+        let mut input = valid_log_buy_transaction_input();
         input.quantity = "not-a-decimal".to_string();
 
-        let err = validate_log_transaction_input(input)
+        let err = validate_log_buy_transaction_input(input)
             .unwrap_err()
             .to_string();
 
@@ -1073,10 +1033,10 @@ mod tests {
 
     #[test]
     fn rejects_invalid_share_price_decimal_format() {
-        let mut input = valid_log_transaction_input();
+        let mut input = valid_log_buy_transaction_input();
         input.share_price = "not-a-decimal".to_string();
 
-        let err = validate_log_transaction_input(input)
+        let err = validate_log_buy_transaction_input(input)
             .unwrap_err()
             .to_string();
 
@@ -1085,10 +1045,10 @@ mod tests {
 
     #[test]
     fn rejects_invalid_order_value_decimal_format() {
-        let mut input = valid_log_transaction_input();
+        let mut input = valid_log_buy_transaction_input();
         input.order_value = "not-a-decimal".to_string();
 
-        let err = validate_log_transaction_input(input)
+        let err = validate_log_buy_transaction_input(input)
             .unwrap_err()
             .to_string();
 

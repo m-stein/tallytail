@@ -4,9 +4,9 @@ use crate::png::load_png_texture_from_bytes;
 use core_lib::{
     AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
     AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
-    ConfigureCatgoriesInput, GetAllocDiagramDataArgs, ListedTransaction, LogSellTransactionInput,
-    LogTransactionInput, NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem,
-    TransactionType, call_macro_with_request_list,
+    ConfigureCatgoriesInput, GetAllocDiagramDataArgs, ListedTransaction, LogBuyTransactionInput,
+    LogSellTransactionInput, NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem,
+    call_macro_with_request_list,
 };
 use eframe::egui;
 use egui::{TextEdit, TextWrapMode, Widget};
@@ -88,7 +88,7 @@ enum Page {
     AddAsset,
     ConfigureCategories,
     AddAllocationRecord,
-    LogTransaction,
+    LogBuyTransaction,
     ListTransactions,
     Portfolio,
 }
@@ -112,7 +112,7 @@ pub struct EframeApp<B: AppBackend> {
     latest_record: Option<AllocationRecord>,
     categories: Vec<Category>,
     add_asset_args: AddAssetArgs,
-    log_transaction_input: LogTransactionInput,
+    log_buy_transaction_input: LogBuyTransactionInput,
     listed_transactions: Vec<ListedTransaction>,
     portfolio_overview_items: Vec<PortfolioOverviewItem>,
     portfolio_isin_items: Vec<PortfolioIsinItem>,
@@ -135,7 +135,6 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     const DEFAULT_INPUT_HEIGHT: f32 = 19.0;
     const DEFAULT_INPUT_WIDTH: f32 = 150.0;
     const HELP_POPUP_WIDTH: f32 = 260.0;
-    const LOG_TRANSACTION_TYPE_BTN_SIZE: [f32; 2] = [120.0, 36.0];
     const DECIMAL_DISPLAY_MAX_FRACTION_DIGITS: usize = 10;
     const SYM_BTN_SIZE: f32 = Self::DEFAULT_INPUT_HEIGHT;
     const SQUIRREL_IMG_PATH: &str = "img/squirrel_68x68.png";
@@ -157,7 +156,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             pending_req_cnt: 0,
             latest_record: None,
             add_asset_args: AddAssetArgs::default(),
-            log_transaction_input: LogTransactionInput::default(),
+            log_buy_transaction_input: LogBuyTransactionInput::default(),
             listed_transactions: Vec::new(),
             portfolio_overview_items: Vec::new(),
             portfolio_isin_items: Vec::new(),
@@ -310,12 +309,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         Ok(())
     }
 
-    fn reset_log_transaction_page(&mut self) {
-        self.log_transaction_input = LogTransactionInput::default();
+    fn reset_log_buy_transaction_page(&mut self) {
+        self.log_buy_transaction_input = LogBuyTransactionInput::default();
     }
 
-    fn init_log_transaction_page(&mut self) -> eyre::Result<()> {
-        self.reset_log_transaction_page();
+    fn init_log_buy_transaction_page(&mut self) -> eyre::Result<()> {
+        self.reset_log_buy_transaction_page();
         self.message = None;
         Ok(())
     }
@@ -424,23 +423,6 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         }
     }
 
-    fn show_log_transaction_type_switch(ui: &mut egui::Ui, value: &mut TransactionType) {
-        ui.horizontal(|ui| {
-            ui.add_sized(
-                Self::LOG_TRANSACTION_TYPE_BTN_SIZE,
-                egui::Button::selectable(*value == TransactionType::Buy, "Buy"),
-            )
-            .clicked()
-            .then(|| *value = TransactionType::Buy);
-            ui.add_sized(
-                Self::LOG_TRANSACTION_TYPE_BTN_SIZE,
-                egui::Button::selectable(*value == TransactionType::Sell, "Sell"),
-            )
-            .clicked()
-            .then(|| *value = TransactionType::Sell);
-        });
-    }
-
     fn show_add_asset_page(&mut self, ui: &mut egui::Ui) {
         ui.label(
             egui::RichText::new("Add Asset")
@@ -547,62 +529,59 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         }
     }
 
-    fn show_log_transaction_page(&mut self, ui: &mut egui::Ui) {
+    fn show_log_buy_transaction_page(&mut self, ui: &mut egui::Ui) {
         ui.label(
-            egui::RichText::new("Log Transaction")
+            egui::RichText::new("Log Buy Transaction")
                 .heading()
                 .size(Self::H2_SIZE),
         );
         ui.add_space(Self::SPACE_2);
 
-        Self::show_log_transaction_type_switch(ui, &mut self.log_transaction_input.r#type);
-        ui.add_space(Self::SPACE_2);
-
-        egui::Grid::new("log_transaction_input_grid")
+        egui::Grid::new("log_buy_transaction_input_grid")
             .num_columns(3)
             .spacing([Self::SPACE_2, Self::SPACE_2])
             .show(ui, |ui| {
                 Self::show_widget_input_row(
                     ui,
                     "Date",
-                    DatePickerButton::new(&mut self.log_transaction_input.date),
+                    DatePickerButton::new(&mut self.log_buy_transaction_input.date),
                     None,
                 );
                 Self::show_enum_input_row(
                     ui,
                     "Currency",
-                    &mut self.log_transaction_input.currency,
+                    &mut self.log_buy_transaction_input.currency,
                     None,
                 );
                 Self::show_widget_input_row(
                     ui,
                     "ISIN",
-                    TextEdit::singleline(&mut self.log_transaction_input.isin),
+                    TextEdit::singleline(&mut self.log_buy_transaction_input.isin),
                     None,
                 );
                 Self::show_widget_input_row(
                     ui,
                     "Quantity",
-                    TextEdit::singleline(&mut self.log_transaction_input.quantity),
+                    TextEdit::singleline(&mut self.log_buy_transaction_input.quantity),
                     None,
                 );
                 Self::show_widget_input_row(
                     ui,
                     "Share price",
-                    TextEdit::singleline(&mut self.log_transaction_input.share_price),
-                    Some("The price per share or unit at which the asset was bought or sold."),
+                    TextEdit::singleline(&mut self.log_buy_transaction_input.share_price),
+                    Some("The price per share or unit at which the asset was bought."),
                 );
                 Self::show_widget_input_row(
                     ui,
                     "Order value",
-                    TextEdit::singleline(&mut self.log_transaction_input.order_value),
-                    Some("The total value of the order before fees and taxes."),
+                    TextEdit::singleline(&mut self.log_buy_transaction_input.order_value),
+                    Some("The total value of the buy order including fees and taxes."),
                 );
             });
         ui.add_space(Self::SPACE_2);
 
         if ui.button("Save").clicked() {
-            self.start_log_transaction(self.log_transaction_input.clone());
+            self.start_log_buy_transaction(self.log_buy_transaction_input.clone());
         }
     }
 
@@ -1090,9 +1069,9 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             self.start_get_categories();
         }
         self.poll_add_asset_rx();
-        if self.poll_log_transaction_rx().is_some() {
-            self.message = Some("Transaction logged".into());
-            self.reset_log_transaction_page();
+        if self.poll_log_buy_transaction_rx().is_some() {
+            self.message = Some("Buy transaction logged".into());
+            self.reset_log_buy_transaction_page();
         }
         if self.poll_log_sell_transaction_rx().is_some() {
             self.message = Some("Sale logged".into());
@@ -1151,9 +1130,9 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 );
                 self.show_page_button(
                     ui,
-                    Page::LogTransaction,
-                    "Log Transaction",
-                    Self::init_log_transaction_page,
+                    Page::LogBuyTransaction,
+                    "Log Buy Transaction",
+                    Self::init_log_buy_transaction_page,
                 );
                 self.show_page_button(
                     ui,
@@ -1173,7 +1152,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                         Page::AllocationDiagram => self.show_allocation_diagram_page(ui),
                         Page::ConfigureCategories => self.show_configure_categories_page(ui),
                         Page::AddAllocationRecord => self.show_add_allocation_record_page(ui),
-                        Page::LogTransaction => self.show_log_transaction_page(ui),
+                        Page::LogBuyTransaction => self.show_log_buy_transaction_page(ui),
                         Page::ListTransactions => self.show_list_transactions_page(ui),
                         Page::Portfolio => self.show_portfolio_page(ui),
                     }
