@@ -1,6 +1,7 @@
-# Asset Allocation Tracker
+# tallytail
 
-A simple app to track your asset allocation.
+tallytail is a personal asset and investment management app. It helps track
+asset allocations, transactions, and portfolio positions.
 
 ## Requirements
 
@@ -13,7 +14,7 @@ A simple app to track your asset allocation.
 ### Desktop target
 
 ```powershell
-cd dekstop_app
+cd desktop_app
 cargo run
 ```
 
@@ -36,3 +37,6 @@ Then, open the front end URL in a browser.
 ```powershell
 ./precommit.ps1
 ```
+
+This script should be run from the repository root and must succeed before each
+commit.

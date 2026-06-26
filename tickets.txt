@@ -1,4 +1,4 @@
-Last added: T33
+Last added: T34
 
 Open
 ####
@@ -44,6 +44,10 @@ T32: Support tracking transactions independently from the allocation records
 
 Closed
 ######
+
+T35: Make fit for use with agentic AI
+
+T34: Find a better app name
 
 T25: Add logo and vertically align content to center of the main window 
 

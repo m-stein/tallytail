@@ -2,11 +2,7 @@ use crate::app_backend::AppBackend;
 use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
 use crate::png::load_png_texture_from_bytes;
 use core_lib::{
-    AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
-    AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
-    ConfigureCatgoriesInput, GetAllocDiagramDataArgs, ListedTransaction, LogBuyTransactionInput,
-    LogSellTransactionInput, NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem,
-    call_macro_with_request_list,
+    APP_NAME, AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord, AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput, ConfigureCatgoriesInput, GetAllocDiagramDataArgs, ListedTransaction, LogBuyTransactionInput, LogSellTransactionInput, NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem, call_macro_with_request_list,
 };
 use eframe::egui;
 use egui::{TextEdit, TextWrapMode, Widget};
@@ -1180,7 +1176,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             }
             ui.add_space(Self::SPACE_2);
             ui.label(
-                egui::RichText::new("Asset Allocation Tracker")
+                egui::RichText::new(APP_NAME)
                     .heading()
                     .size(Self::H1_SIZE),
             );
