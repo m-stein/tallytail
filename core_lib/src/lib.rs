@@ -23,7 +23,7 @@ pub use crate::listed_transaction::ListedTransaction;
 pub use crate::log_transaction_input::{Currency, LogBuyTransactionInput, LogSellTransactionInput};
 pub use crate::portfolio_item::{PortfolioIsinItem, PortfolioOverviewItem};
 
-pub const APP_NAME: &str = "tallytail";
+pub const APP_NAME: &str = "Tallytail";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransactionType {

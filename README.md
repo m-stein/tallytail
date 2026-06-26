@@ -1,6 +1,6 @@
-# tallytail
+# Tallytail Asset Manager
 
-tallytail is a personal asset and investment management app. It helps track
+Tallytail is a personal asset and investment management app. It helps track
 asset allocations, transactions, and portfolio positions.
 
 ## Requirements

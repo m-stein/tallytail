@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository.
 
 ## Project Direction
 
-tallytail is a personal asset and investment management app. It helps track
+Tallytail is a personal asset and investment management app. It helps track
 asset allocations, transactions, and portfolio positions.
 
 The codebase has two application variants:
@@ -132,8 +132,6 @@ diagnostic.
 
 ## Product Language
 
-Use **tallytail** as the product name. Prefer the broader framing of asset and
-investment management unless the code or UI location is specifically about
-allocation tracking.
-
-When touching visible text, keep labels concise and workflow-focused.
+Use **Tallytail** as the product name. For titles use the longer form
+**Tallytail Asset Manager**. When touching visible text, keep labels
+concise and workflow-focused.
