@@ -89,8 +89,8 @@ enum Page {
     ConfigureCategories,
     AddAllocationRecord,
     LogBuyTransaction,
-    ListTransactions,
-    Portfolio,
+    Transactions,
+    LogSellTransaction,
 }
 
 pub struct PositionItem {
@@ -137,6 +137,8 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     const HELP_POPUP_WIDTH: f32 = 260.0;
     const DECIMAL_DISPLAY_MAX_FRACTION_DIGITS: usize = 10;
     const SYM_BTN_SIZE: f32 = Self::DEFAULT_INPUT_HEIGHT;
+    const BACK_BTN_SIZE: f32 = Self::SYM_BTN_SIZE * 1.2;
+    const TRANSACTION_ACTION_BTN_SIZE: [f32; 2] = [80.0, 32.0];
     const SQUIRREL_IMG_PATH: &str = "img/squirrel_68x68.png";
 
     pub fn new(backend: BACKEND) -> eyre::Result<Self> {
@@ -269,10 +271,13 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         label: &str,
         init_page_fn: fn(&mut Self) -> eyre::Result<()>,
     ) {
-        let response = ui.add_sized(
-            [180.0, 20.0],
-            egui::Button::selectable(self.page == page, label),
-        );
+        let selected = self.page == page
+            || (page == Page::Transactions
+                && matches!(
+                    self.page,
+                    Page::LogBuyTransaction | Page::LogSellTransaction
+                ));
+        let response = ui.add_sized([180.0, 20.0], egui::Button::selectable(selected, label));
         if response.clicked() {
             match init_page_fn(self) {
                 Ok(_) => {
@@ -281,6 +286,17 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 Err(e) => {
                     self.message = Some(e.to_string());
                 }
+            }
+        }
+    }
+
+    fn go_to_transactions_page(&mut self) {
+        match self.init_transactions_page() {
+            Ok(()) => {
+                self.page = Page::Transactions;
+            }
+            Err(err) => {
+                self.message = Some(err.to_string());
             }
         }
     }
@@ -319,13 +335,13 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         Ok(())
     }
 
-    fn init_list_transactions_page(&mut self) -> eyre::Result<()> {
+    fn init_transactions_page(&mut self) -> eyre::Result<()> {
         self.start_list_transactions();
         self.message = None;
         Ok(())
     }
 
-    fn init_portfolio_page(&mut self) -> eyre::Result<()> {
+    fn init_log_sell_transaction_page(&mut self) -> eyre::Result<()> {
         self.portfolio_isin = None;
         self.portfolio_isin_items.clear();
         self.reset_portfolio_sale_inputs();
@@ -530,12 +546,24 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     }
 
     fn show_log_buy_transaction_page(&mut self, ui: &mut egui::Ui) {
-        ui.label(
-            egui::RichText::new("Log Buy Transaction")
-                .heading()
-                .size(Self::H2_SIZE),
-        );
-        ui.add_space(Self::SPACE_2);
+        ui.horizontal(|ui| {
+            if ui
+                .add_sized(
+                    [Self::BACK_BTN_SIZE, Self::BACK_BTN_SIZE],
+                    egui::Button::new(egui::RichText::new("‹").size(Self::H3_SIZE)),
+                )
+                .clicked()
+            {
+                self.go_to_transactions_page();
+            }
+            ui.add_space(Self::SPACE_2);
+            ui.label(
+                egui::RichText::new("Log a Purchase")
+                    .heading()
+                    .size(Self::H2_SIZE),
+            );
+        });
+        ui.add_space(Self::SPACE_3);
 
         egui::Grid::new("log_buy_transaction_input_grid")
             .num_columns(3)
@@ -585,12 +613,48 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         }
     }
 
-    fn show_list_transactions_page(&mut self, ui: &mut egui::Ui) {
+    fn show_transactions_page(&mut self, ui: &mut egui::Ui) {
         ui.label(
-            egui::RichText::new("List Transactions")
+            egui::RichText::new("Transactions")
                 .heading()
                 .size(Self::H2_SIZE),
         );
+        ui.add_space(Self::SPACE_3);
+
+        ui.horizontal(|ui| {
+            if ui
+                .add_sized(
+                    Self::TRANSACTION_ACTION_BTN_SIZE,
+                    egui::Button::new(egui::RichText::new("Buy").size(Self::H3_SIZE)),
+                )
+                .clicked()
+            {
+                match self.init_log_buy_transaction_page() {
+                    Ok(()) => {
+                        self.page = Page::LogBuyTransaction;
+                    }
+                    Err(err) => {
+                        self.message = Some(err.to_string());
+                    }
+                }
+            }
+            if ui
+                .add_sized(
+                    Self::TRANSACTION_ACTION_BTN_SIZE,
+                    egui::Button::new(egui::RichText::new("Sell").size(Self::H3_SIZE)),
+                )
+                .clicked()
+            {
+                match self.init_log_sell_transaction_page() {
+                    Ok(()) => {
+                        self.page = Page::LogSellTransaction;
+                    }
+                    Err(err) => {
+                        self.message = Some(err.to_string());
+                    }
+                }
+            }
+        });
         ui.add_space(Self::SPACE_3);
 
         egui::Grid::new("list_transactions_grid")
@@ -619,30 +683,36 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             });
     }
 
-    fn show_portfolio_page(&mut self, ui: &mut egui::Ui) {
-        ui.label(
-            egui::RichText::new("Portfolio")
-                .heading()
-                .size(Self::H2_SIZE),
-        );
+    fn show_log_sell_transaction_page(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui
+                .add_sized(
+                    [Self::BACK_BTN_SIZE, Self::BACK_BTN_SIZE],
+                    egui::Button::new(egui::RichText::new("‹").size(Self::H3_SIZE)),
+                )
+                .clicked()
+            {
+                if self.portfolio_isin.is_some() {
+                    self.portfolio_isin = None;
+                    self.portfolio_isin_items.clear();
+                    self.reset_portfolio_sale_inputs();
+                    self.start_list_portfolio_overview_items();
+                } else {
+                    self.go_to_transactions_page();
+                }
+            }
+            ui.add_space(Self::SPACE_2);
+            ui.label(
+                egui::RichText::new("Log a Sale")
+                    .heading()
+                    .size(Self::H2_SIZE),
+            );
+        });
         ui.add_space(Self::SPACE_3);
 
         if let Some(isin) = self.portfolio_isin.clone() {
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(&isin).heading().size(Self::H3_SIZE));
-                ui.add_space(Self::SPACE_2);
-                if ui
-                    .add_sized(
-                        [Self::SYM_BTN_SIZE, Self::SYM_BTN_SIZE],
-                        egui::Button::new("‹"),
-                    )
-                    .clicked()
-                {
-                    self.portfolio_isin = None;
-                    self.portfolio_isin_items.clear();
-                    self.reset_portfolio_sale_inputs();
-                    self.start_list_portfolio_overview_items();
-                }
             });
             ui.add_space(Self::SPACE_3);
 
@@ -714,7 +784,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 });
 
             ui.add_space(Self::SPACE_3);
-            if ui.button("Log Sale").clicked() {
+            if ui.button("Save").clicked() {
                 self.log_sell_transaction_input.isin = isin.clone();
                 self.log_sell_transaction_input
                     .portfolio_item_id_to_quantity
@@ -725,9 +795,18 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         }
 
         if self.portfolio_overview_items.is_empty() {
-            ui.label("No open portfolio positions.");
+            ui.label("No open positions to sell.");
             return;
         }
+
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Select a Position...")
+                    .heading()
+                    .size(Self::H3_SIZE),
+            );
+        });
+        ui.add_space(Self::SPACE_3);
 
         let mut selected_isin = None;
         egui::Grid::new("portfolio_positions_grid")
@@ -1130,17 +1209,10 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 );
                 self.show_page_button(
                     ui,
-                    Page::LogBuyTransaction,
-                    "Log Buy Transaction",
-                    Self::init_log_buy_transaction_page,
+                    Page::Transactions,
+                    "Transactions",
+                    Self::init_transactions_page,
                 );
-                self.show_page_button(
-                    ui,
-                    Page::ListTransactions,
-                    "List Transactions",
-                    Self::init_list_transactions_page,
-                );
-                self.show_page_button(ui, Page::Portfolio, "Portfolio", Self::init_portfolio_page);
             });
             ui.add_space(20.0);
             ui.vertical(|ui| {
@@ -1153,8 +1225,8 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                         Page::ConfigureCategories => self.show_configure_categories_page(ui),
                         Page::AddAllocationRecord => self.show_add_allocation_record_page(ui),
                         Page::LogBuyTransaction => self.show_log_buy_transaction_page(ui),
-                        Page::ListTransactions => self.show_list_transactions_page(ui),
-                        Page::Portfolio => self.show_portfolio_page(ui),
+                        Page::Transactions => self.show_transactions_page(ui),
+                        Page::LogSellTransaction => self.show_log_sell_transaction_page(ui),
                     }
                 }
                 ui.add_space(Self::SPACE_3);
