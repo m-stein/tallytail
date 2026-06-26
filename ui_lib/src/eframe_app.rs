@@ -2,7 +2,11 @@ use crate::app_backend::AppBackend;
 use crate::percent_stacked_bar_chart::draw_percent_stacked_bar_chart;
 use crate::png::load_png_texture_from_bytes;
 use core_lib::{
-    APP_NAME, AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord, AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput, ConfigureCatgoriesInput, GetAllocDiagramDataArgs, ListedTransaction, LogBuyTransactionInput, LogSellTransactionInput, NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem, call_macro_with_request_list,
+    APP_NAME, AddAssetArgs, AllocationDiagramData, AllocationPositionInput, AllocationRecord,
+    AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
+    ConfigureCatgoriesInput, GetAllocDiagramDataArgs, ListedTransaction, LogBuyTransactionInput,
+    LogSellTransactionInput, NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem,
+    call_macro_with_request_list,
 };
 use eframe::egui;
 use egui::{TextEdit, TextWrapMode, Widget};
@@ -1175,11 +1179,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 ui.image((texture.id(), egui::vec2(68.0, 68.0)));
             }
             ui.add_space(Self::SPACE_2);
-            ui.label(
-                egui::RichText::new(APP_NAME)
-                    .heading()
-                    .size(Self::H1_SIZE),
-            );
+            ui.label(egui::RichText::new(APP_NAME).heading().size(Self::H1_SIZE));
         });
         ui.add_space(Self::SPACE_3);
         ui.horizontal(|ui| {
