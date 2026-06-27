@@ -142,6 +142,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
     const SYM_BTN_SIZE: f32 = Self::DEFAULT_INPUT_HEIGHT;
     const BACK_BTN_SIZE: f32 = Self::SYM_BTN_SIZE * 1.2;
     const TRANSACTION_ACTION_BTN_SIZE: [f32; 2] = [80.0, 32.0];
+    const MAX_TRANSACTION_ASSET_SUGGESTIONS: usize = 6;
     const SQUIRREL_IMG_PATH: &str = "img/squirrel_68x68.png";
 
     pub fn new(backend: BACKEND) -> eyre::Result<Self> {
@@ -336,6 +337,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
     fn init_log_buy_transaction_page(&mut self) -> eyre::Result<()> {
         self.reset_log_buy_transaction_page();
+        self.start_list_transaction_assets();
         self.message = None;
         Ok(())
     }
@@ -592,12 +594,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     &mut self.log_buy_transaction_input.currency,
                     None,
                 );
-                Self::show_widget_input_row(
-                    ui,
-                    "ISIN",
-                    TextEdit::singleline(&mut self.log_buy_transaction_input.isin),
-                    None,
-                );
+                self.show_transaction_asset_isin_input_row(ui);
                 Self::show_widget_input_row(
                     ui,
                     "Quantity",
@@ -621,6 +618,89 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
         if ui.button("Save").clicked() {
             self.start_log_buy_transaction(self.log_buy_transaction_input.clone());
+        }
+    }
+
+    fn show_transaction_asset_isin_input_row(&mut self, ui: &mut egui::Ui) {
+        ui.label("ISIN:");
+        ui.add_sized(
+            [Self::DEFAULT_INPUT_WIDTH, Self::DEFAULT_INPUT_HEIGHT],
+            TextEdit::singleline(&mut self.log_buy_transaction_input.isin),
+        );
+        Self::show_help_if_any(ui, "ISIN", None);
+        ui.end_row();
+
+        let suggestions = self.transaction_asset_suggestions();
+        if suggestions.is_empty() {
+            return;
+        }
+
+        let mut selected_isin = None;
+        ui.label("");
+        let suggestion_height = suggestions.len() as f32 * Self::DEFAULT_INPUT_HEIGHT;
+        let (_, rect) = ui.allocate_space(egui::vec2(Self::DEFAULT_INPUT_WIDTH, suggestion_height));
+        let suggestion_rect = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(
+                Self::DEFAULT_INPUT_WIDTH + Self::SPACE_2 + Self::SYM_BTN_SIZE,
+                suggestion_height,
+            ),
+        );
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(suggestion_rect)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+            |ui| {
+                for asset in suggestions {
+                    let label = Self::transaction_asset_suggestion_label(asset);
+                    if ui.link(label).clicked() {
+                        selected_isin = Some(asset.isin.clone());
+                    }
+                }
+            },
+        );
+        ui.allocate_space(egui::vec2(Self::SYM_BTN_SIZE, suggestion_height));
+        ui.end_row();
+
+        if let Some(isin) = selected_isin {
+            self.log_buy_transaction_input.isin = isin;
+        }
+    }
+
+    fn transaction_asset_suggestions(&self) -> Vec<&TransactionAsset> {
+        let query = self.log_buy_transaction_input.isin.trim().to_lowercase();
+        if query.is_empty() {
+            return Vec::new();
+        }
+
+        self.transaction_assets
+            .iter()
+            .filter(|asset| Self::transaction_asset_matches_query(asset, &query))
+            .take(Self::MAX_TRANSACTION_ASSET_SUGGESTIONS)
+            .collect()
+    }
+
+    fn transaction_asset_matches_query(asset: &TransactionAsset, query: &str) -> bool {
+        asset.isin.to_lowercase().contains(query)
+            || asset
+                .symbol
+                .as_deref()
+                .is_some_and(|symbol| symbol.to_lowercase().contains(query))
+            || asset
+                .name
+                .as_deref()
+                .is_some_and(|name| name.to_lowercase().contains(query))
+    }
+
+    fn transaction_asset_suggestion_label(asset: &TransactionAsset) -> String {
+        let title = asset
+            .name
+            .as_deref()
+            .or(asset.symbol.as_deref())
+            .unwrap_or(&asset.isin);
+        match asset.symbol.as_deref() {
+            Some(symbol) if title != symbol => format!("{title} ({symbol}) - {}", asset.isin),
+            _ => format!("{title} - {}", asset.isin),
         }
     }
 
