@@ -1,4 +1,4 @@
-Last added: T34
+Last added: T36
 
 Open
 ####
@@ -41,6 +41,7 @@ T31: Improve name of load_png_data request to, e.g., get_file_content
 
 T32: Support tracking transactions independently from the allocation records
 
+T36: Autocompletion for ISINs via asset names when logging a buy transaction
 
 Closed
 ######

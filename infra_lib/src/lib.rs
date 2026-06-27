@@ -1,8 +1,9 @@
 use core_lib::{
     AdaptCategoryInput, AllocationRecord, Asset, AssetReference, AssetReferenceType,
     CategoryAssignment, ConfigureCatgoriesInput, Currency, GetAllocDiagramDataArgs,
-    ListedTransaction, LogBuyTransactionInput, LogSellTransactionInput, NewCategoryInput,
-    PortfolioIsinItem, PortfolioOverviewItem, TransactionType, add_asset_args::AddAssetArgs,
+    ImportTransactionAssetsInput, ListedTransaction, LogBuyTransactionInput,
+    LogSellTransactionInput, NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem,
+    TransactionAsset, TransactionType, add_asset_args::AddAssetArgs,
     allocation_diagram_data::AllocationDiagramData, category::Category,
     category_value::CategoryValue,
 };
@@ -179,6 +180,38 @@ pub fn list_transactions() -> eyre::Result<Vec<ListedTransaction>> {
     list_transactions_raw(&connection)
 }
 
+pub fn import_transaction_assets(
+    input: ImportTransactionAssetsInput,
+) -> eyre::Result<Vec<TransactionAsset>> {
+    let db_path = transactions_db_path();
+    if let Some(parent) = db_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut connection = rusqlite::Connection::open(db_path)?;
+    ensure_transactions_schema(&connection)?;
+
+    let tx = connection.transaction()?;
+    for raw_isin in parse_transaction_asset_isins(input.isins)? {
+        let lookup = lookup_transaction_asset(&raw_isin)?;
+        upsert_transaction_asset(&tx, lookup)?;
+    }
+    tx.commit()?;
+
+    let connection = rusqlite::Connection::open(transactions_db_path())?;
+    ensure_transactions_schema(&connection)?;
+    list_transaction_assets_raw(&connection)
+}
+
+pub fn list_transaction_assets() -> eyre::Result<Vec<TransactionAsset>> {
+    let db_path = transactions_db_path();
+    if let Some(parent) = db_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let connection = rusqlite::Connection::open(db_path)?;
+    ensure_transactions_schema(&connection)?;
+    list_transaction_assets_raw(&connection)
+}
+
 pub fn list_portfolio_overview_items() -> eyre::Result<Vec<PortfolioOverviewItem>> {
     let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
     if let Some(parent) = db_path.parent() {
@@ -198,6 +231,10 @@ pub fn list_portfolio_isin_items(isin: String) -> eyre::Result<Vec<PortfolioIsin
     let connection = rusqlite::Connection::open(db_path)?;
     ensure_transactions_schema(&connection)?;
     list_portfolio_isin_items_raw(&connection, &isin)
+}
+
+fn transactions_db_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb")
 }
 
 #[derive(Debug)]
@@ -309,6 +346,73 @@ fn validate_log_sell_transaction_input(
     })
 }
 
+#[derive(Debug)]
+struct TransactionAssetLookup {
+    isin: String,
+    symbol: Option<String>,
+    name: Option<String>,
+    exchange: Option<String>,
+    quote_type: Option<String>,
+    updated_at_date: String,
+    updated_at_time: String,
+}
+
+fn parse_transaction_asset_isins(inputs: Vec<String>) -> eyre::Result<Vec<String>> {
+    let mut isins = Vec::new();
+    let mut seen = HashSet::new();
+
+    for input in inputs {
+        for token in input.split(|ch: char| ch.is_whitespace() || ch == ',' || ch == ';') {
+            let trimmed = token.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let isin = normalize_isin(trimmed)?;
+            if seen.insert(isin.clone()) {
+                isins.push(isin);
+            }
+        }
+    }
+
+    if isins.is_empty() {
+        return Err(eyre!("At least one ISIN is required"));
+    }
+
+    Ok(isins)
+}
+
+fn lookup_transaction_asset(isin: &str) -> eyre::Result<TransactionAssetLookup> {
+    let mut search = rustyfinance::Search::new(isin);
+    search.max_results = 1;
+    search.news_count = 0;
+    search.lists_count = 0;
+    search.recommended = 0;
+    search.fetch().map_err(|err| eyre!(err.to_string()))?;
+
+    let quote = search.quotes().into_iter().next();
+    let text_field = |key: &str| {
+        quote
+            .as_ref()
+            .and_then(|quote| quote.get(key))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+    };
+    let name = text_field("longname").or_else(|| text_field("shortname"));
+
+    let now = jiff::Zoned::now();
+    Ok(TransactionAssetLookup {
+        isin: isin.to_string(),
+        symbol: text_field("symbol"),
+        name,
+        exchange: text_field("exchDisp").or_else(|| text_field("exchange")),
+        quote_type: text_field("quoteType"),
+        updated_at_date: now.date().to_string(),
+        updated_at_time: now.time().to_string(),
+    })
+}
+
 fn parse_transaction_decimal(field_name: &str, input: &str) -> eyre::Result<Decimal> {
     input
         .trim()
@@ -369,7 +473,16 @@ fn ensure_transactions_schema(connection: &rusqlite::Connection) -> eyre::Result
 
         CREATE TABLE IF NOT EXISTS assets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            isin TEXT NOT NULL UNIQUE
+            isin TEXT NOT NULL UNIQUE,
+            symbol TEXT,
+            name TEXT,
+            exchange_id INTEGER,
+            quote_type_id INTEGER,
+            updated_at_date_id INTEGER,
+            updated_at_time TEXT,
+            FOREIGN KEY (exchange_id) REFERENCES exchanges(id),
+            FOREIGN KEY (quote_type_id) REFERENCES quote_types(id),
+            FOREIGN KEY (updated_at_date_id) REFERENCES dates(id)
         );
 
         CREATE TABLE IF NOT EXISTS currencies (
@@ -385,6 +498,16 @@ fn ensure_transactions_schema(connection: &rusqlite::Connection) -> eyre::Result
         CREATE TABLE IF NOT EXISTS dates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             date TEXT NOT NULL UNIQUE
+        );
+
+        CREATE TABLE IF NOT EXISTS exchanges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE
+        );
+
+        CREATE TABLE IF NOT EXISTS quote_types (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE
         );
 
         CREATE TABLE IF NOT EXISTS transactions (
@@ -441,6 +564,17 @@ fn get_or_create_id(
         |row| row.get(0),
     )?;
     Ok(id)
+}
+
+fn get_or_create_optional_id(
+    connection: &rusqlite::Transaction<'_>,
+    table_name: &str,
+    column_name: &str,
+    value: Option<&str>,
+) -> eyre::Result<Option<i64>> {
+    value
+        .map(|value| get_or_create_id(connection, table_name, column_name, value))
+        .transpose()
 }
 
 fn transaction_type_code(transaction_type: TransactionType) -> &'static str {
@@ -500,6 +634,96 @@ fn insert_transaction(
         ],
     )?;
     Ok(connection.last_insert_rowid())
+}
+
+fn upsert_transaction_asset(
+    connection: &rusqlite::Transaction<'_>,
+    asset: TransactionAssetLookup,
+) -> eyre::Result<()> {
+    let exchange_id =
+        get_or_create_optional_id(connection, "exchanges", "name", asset.exchange.as_deref())?;
+    let quote_type_id = get_or_create_optional_id(
+        connection,
+        "quote_types",
+        "name",
+        asset.quote_type.as_deref(),
+    )?;
+    let updated_at_date_id = get_or_create_id(connection, "dates", "date", &asset.updated_at_date)?;
+
+    connection.execute(
+        "
+        INSERT INTO assets
+            (
+                isin,
+                symbol,
+                name,
+                exchange_id,
+                quote_type_id,
+                updated_at_date_id,
+                updated_at_time
+            )
+        VALUES
+            (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        ON CONFLICT(isin) DO UPDATE SET
+            symbol = excluded.symbol,
+            name = excluded.name,
+            exchange_id = excluded.exchange_id,
+            quote_type_id = excluded.quote_type_id,
+            updated_at_date_id = excluded.updated_at_date_id,
+            updated_at_time = excluded.updated_at_time
+        ",
+        params![
+            asset.isin,
+            asset.symbol,
+            asset.name,
+            exchange_id,
+            quote_type_id,
+            updated_at_date_id,
+            asset.updated_at_time,
+        ],
+    )?;
+    Ok(())
+}
+
+fn list_transaction_assets_raw(
+    connection: &rusqlite::Connection,
+) -> eyre::Result<Vec<TransactionAsset>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            assets.id,
+            assets.isin,
+            assets.symbol,
+            assets.name,
+            exchanges.name,
+            quote_types.name,
+            dates.date,
+            assets.updated_at_time
+        FROM assets
+        LEFT JOIN exchanges ON exchanges.id = assets.exchange_id
+        LEFT JOIN quote_types ON quote_types.id = assets.quote_type_id
+        LEFT JOIN dates ON dates.id = assets.updated_at_date_id
+        ORDER BY COALESCE(assets.name, ''), assets.isin
+        ",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(TransactionAsset {
+            id: row.get(0)?,
+            isin: row.get(1)?,
+            symbol: row.get(2)?,
+            name: row.get(3)?,
+            exchange: row.get(4)?,
+            quote_type: row.get(5)?,
+            updated_at_date: row.get(6)?,
+            updated_at_time: row.get(7)?,
+        })
+    })?;
+
+    let mut assets = Vec::new();
+    for row in rows {
+        assets.push(row?);
+    }
+    Ok(assets)
 }
 
 fn list_transactions_raw(
@@ -965,6 +1189,26 @@ mod tests {
     #[test]
     fn rejects_invalid_isin_check_digit() {
         assert!(!is_valid_isin("US0378331006"));
+    }
+
+    #[test]
+    fn parses_transaction_asset_isin_list() {
+        let isins = parse_transaction_asset_isins(vec![
+            "us0378331005\nUS5949181045".to_string(),
+            "US0378331005; US0231351067".to_string(),
+        ])
+        .unwrap();
+
+        assert_eq!(isins, vec!["US0378331005", "US5949181045", "US0231351067"]);
+    }
+
+    #[test]
+    fn rejects_empty_transaction_asset_isin_list() {
+        let err = parse_transaction_asset_isins(vec![" \n , ; ".to_string()])
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("At least one ISIN"));
     }
 
     #[test]

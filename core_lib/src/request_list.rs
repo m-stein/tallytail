@@ -10,6 +10,8 @@ macro_rules! call_macro_with_request_list {
             log_buy_transaction(core_lib::LogBuyTransactionInput) -> ();
             log_sell_transaction(core_lib::LogSellTransactionInput) -> ();
             list_transactions() -> Vec<core_lib::ListedTransaction>;
+            import_transaction_assets(core_lib::ImportTransactionAssetsInput) -> Vec<core_lib::TransactionAsset>;
+            list_transaction_assets() -> Vec<core_lib::TransactionAsset>;
             list_portfolio_overview_items() -> Vec<core_lib::PortfolioOverviewItem>;
             list_portfolio_isin_items(String) -> Vec<core_lib::PortfolioIsinItem>;
             load_png_data(String) -> Vec<u8>;

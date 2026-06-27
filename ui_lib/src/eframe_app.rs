@@ -6,7 +6,7 @@ use core_lib::{
     AssetReferenceType, Category, CategoryAssignmentPc, CategoryValueInput,
     ConfigureCatgoriesInput, GetAllocDiagramDataArgs, ListedTransaction, LogBuyTransactionInput,
     LogSellTransactionInput, NewCategoryInput, PortfolioIsinItem, PortfolioOverviewItem,
-    call_macro_with_request_list,
+    TransactionAsset, call_macro_with_request_list,
 };
 use eframe::egui;
 use egui::{TextEdit, TextWrapMode, Widget};
@@ -91,6 +91,7 @@ enum Page {
     LogBuyTransaction,
     Transactions,
     LogSellTransaction,
+    TransactionAssets,
 }
 
 pub struct PositionItem {
@@ -114,6 +115,8 @@ pub struct EframeApp<B: AppBackend> {
     add_asset_args: AddAssetArgs,
     log_buy_transaction_input: LogBuyTransactionInput,
     listed_transactions: Vec<ListedTransaction>,
+    transaction_asset_isins_input: String,
+    transaction_assets: Vec<TransactionAsset>,
     portfolio_overview_items: Vec<PortfolioOverviewItem>,
     portfolio_isin_items: Vec<PortfolioIsinItem>,
     portfolio_isin: Option<String>,
@@ -160,6 +163,8 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             add_asset_args: AddAssetArgs::default(),
             log_buy_transaction_input: LogBuyTransactionInput::default(),
             listed_transactions: Vec::new(),
+            transaction_asset_isins_input: String::new(),
+            transaction_assets: Vec::new(),
             portfolio_overview_items: Vec::new(),
             portfolio_isin_items: Vec::new(),
             portfolio_isin: None,
@@ -337,6 +342,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
     fn init_transactions_page(&mut self) -> eyre::Result<()> {
         self.start_list_transactions();
+        self.message = None;
+        Ok(())
+    }
+
+    fn init_transaction_assets_page(&mut self) -> eyre::Result<()> {
+        self.start_list_transaction_assets();
         self.message = None;
         Ok(())
     }
@@ -678,6 +689,60 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     ui.label(&transaction.share_price);
                     ui.label(&transaction.order_value);
                     ui.label(&transaction.currency);
+                    ui.end_row();
+                }
+            });
+    }
+
+    fn show_transaction_assets_page(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("Transaction Assets")
+                .heading()
+                .size(Self::H2_SIZE),
+        );
+        ui.add_space(Self::SPACE_2);
+
+        ui.label("ISINs:");
+        ui.add_sized(
+            [Self::MAX_CONTENT_WIDTH, 120.0],
+            TextEdit::multiline(&mut self.transaction_asset_isins_input),
+        );
+        ui.add_space(Self::SPACE_2);
+
+        if ui.button("Import").clicked() {
+            let isins = self
+                .transaction_asset_isins_input
+                .lines()
+                .map(ToOwned::to_owned)
+                .collect();
+            self.start_import_transaction_assets(core_lib::ImportTransactionAssetsInput { isins });
+        }
+
+        ui.add_space(Self::SPACE_3);
+        egui::Grid::new("transaction_assets_grid")
+            .striped(true)
+            .spacing([Self::SPACE_2, Self::SPACE_2])
+            .show(ui, |ui| {
+                ui.strong("ISIN");
+                ui.strong("Name");
+                ui.strong("Symbol");
+                ui.strong("Exchange");
+                ui.strong("Type");
+                ui.strong("Updated");
+                ui.end_row();
+
+                for asset in &self.transaction_assets {
+                    ui.label(&asset.isin);
+                    ui.label(asset.name.as_deref().unwrap_or(""));
+                    ui.label(asset.symbol.as_deref().unwrap_or(""));
+                    ui.label(asset.exchange.as_deref().unwrap_or(""));
+                    ui.label(asset.quote_type.as_deref().unwrap_or(""));
+                    ui.label(match (&asset.updated_at_date, &asset.updated_at_time) {
+                        (Some(date), Some(time)) => format!("{date} {time}"),
+                        (Some(date), None) => date.clone(),
+                        (None, Some(time)) => time.clone(),
+                        (None, None) => String::new(),
+                    });
                     ui.end_row();
                 }
             });
@@ -1164,6 +1229,14 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         if let Some(transactions) = self.poll_list_transactions_rx() {
             self.listed_transactions = transactions;
         }
+        if let Some(assets) = self.poll_import_transaction_assets_rx() {
+            self.transaction_assets = assets;
+            self.transaction_asset_isins_input.clear();
+            self.message = Some("Transaction assets imported".into());
+        }
+        if let Some(assets) = self.poll_list_transaction_assets_rx() {
+            self.transaction_assets = assets;
+        }
         if let Some(positions) = self.poll_list_portfolio_overview_items_rx() {
             self.portfolio_overview_items = positions;
         }
@@ -1213,6 +1286,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     "Transactions",
                     Self::init_transactions_page,
                 );
+                self.show_page_button(
+                    ui,
+                    Page::TransactionAssets,
+                    "Transaction Assets",
+                    Self::init_transaction_assets_page,
+                );
             });
             ui.add_space(20.0);
             ui.vertical(|ui| {
@@ -1227,6 +1306,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                         Page::LogBuyTransaction => self.show_log_buy_transaction_page(ui),
                         Page::Transactions => self.show_transactions_page(ui),
                         Page::LogSellTransaction => self.show_log_sell_transaction_page(ui),
+                        Page::TransactionAssets => self.show_transaction_assets_page(ui),
                     }
                 }
                 ui.add_space(Self::SPACE_3);

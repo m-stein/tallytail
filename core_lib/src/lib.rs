@@ -8,6 +8,7 @@ pub mod listed_transaction;
 pub mod log_transaction_input;
 pub mod portfolio_item;
 pub mod request_list;
+pub mod transaction_asset;
 
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter, EnumString};
@@ -22,6 +23,7 @@ pub use crate::configure_categories_input::{
 pub use crate::listed_transaction::ListedTransaction;
 pub use crate::log_transaction_input::{Currency, LogBuyTransactionInput, LogSellTransactionInput};
 pub use crate::portfolio_item::{PortfolioIsinItem, PortfolioOverviewItem};
+pub use crate::transaction_asset::{ImportTransactionAssetsInput, TransactionAsset};
 
 pub const APP_NAME: &str = "Tallytail";
 
