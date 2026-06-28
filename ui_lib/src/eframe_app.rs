@@ -92,6 +92,7 @@ enum Page {
     Transactions,
     LogSellTransaction,
     TransactionAssets,
+    ImportTransactionAssets,
 }
 
 pub struct PositionItem {
@@ -284,7 +285,9 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 && matches!(
                     self.page,
                     Page::LogBuyTransaction | Page::LogSellTransaction
-                ));
+                ))
+            || (page == Page::TransactionAssets
+                && matches!(self.page, Page::ImportTransactionAssets));
         let response = ui.add_sized([180.0, 20.0], egui::Button::selectable(selected, label));
         if response.clicked() {
             match init_page_fn(self) {
@@ -302,6 +305,17 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         match self.init_transactions_page() {
             Ok(()) => {
                 self.page = Page::Transactions;
+            }
+            Err(err) => {
+                self.message = Some(err.to_string());
+            }
+        }
+    }
+
+    fn go_to_transaction_assets_page(&mut self) {
+        match self.init_transaction_assets_page() {
+            Ok(()) => {
+                self.page = Page::TransactionAssets;
             }
             Err(err) => {
                 self.message = Some(err.to_string());
@@ -352,6 +366,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
     fn init_transaction_assets_page(&mut self) -> eyre::Result<()> {
         self.start_list_transaction_assets();
+        self.message = None;
+        Ok(())
+    }
+
+    fn init_import_transaction_assets_page(&mut self) -> eyre::Result<()> {
+        self.transaction_asset_isins_input.clear();
         self.message = None;
         Ok(())
     }
@@ -785,25 +805,26 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 .heading()
                 .size(Self::H2_SIZE),
         );
-        ui.add_space(Self::SPACE_2);
-
-        ui.label("ISINs:");
-        ui.add_sized(
-            [Self::MAX_CONTENT_WIDTH, 120.0],
-            TextEdit::multiline(&mut self.transaction_asset_isins_input),
-        );
-        ui.add_space(Self::SPACE_2);
-
-        if ui.button("Import").clicked() {
-            let isins = self
-                .transaction_asset_isins_input
-                .lines()
-                .map(ToOwned::to_owned)
-                .collect();
-            self.start_import_transaction_assets(core_lib::ImportTransactionAssetsInput { isins });
-        }
-
         ui.add_space(Self::SPACE_3);
+
+        if ui
+            .add_sized(
+                Self::TRANSACTION_ACTION_BTN_SIZE,
+                egui::Button::new(egui::RichText::new("Import").size(Self::H3_SIZE)),
+            )
+            .clicked()
+        {
+            match self.init_import_transaction_assets_page() {
+                Ok(()) => {
+                    self.page = Page::ImportTransactionAssets;
+                }
+                Err(err) => {
+                    self.message = Some(err.to_string());
+                }
+            }
+        }
+        ui.add_space(Self::SPACE_3);
+
         egui::Grid::new("transaction_assets_grid")
             .striped(true)
             .spacing([Self::SPACE_2, Self::SPACE_2])
@@ -831,6 +852,52 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                     ui.end_row();
                 }
             });
+    }
+
+    fn show_import_transaction_assets_page(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui
+                .add_sized(
+                    [Self::BACK_BTN_SIZE, Self::BACK_BTN_SIZE],
+                    egui::Button::new(egui::RichText::new("‹").size(Self::H3_SIZE)),
+                )
+                .clicked()
+            {
+                self.go_to_transaction_assets_page();
+            }
+            ui.add_space(Self::SPACE_2);
+            ui.label(
+                egui::RichText::new("Import Transaction Assets")
+                    .heading()
+                    .size(Self::H2_SIZE),
+            );
+        });
+        ui.add_space(Self::SPACE_3);
+
+        ui.label("ISINs:");
+        ui.horizontal(|ui| {
+            ui.add_sized(
+                [Self::MAX_CONTENT_WIDTH / 2.0, 120.0],
+                TextEdit::multiline(&mut self.transaction_asset_isins_input),
+            );
+            Self::show_help_if_any(
+                ui,
+                "Transaction asset ISINs",
+                Some(
+                    "Enter one or more ISINs separated by line breaks, spaces, commas, or semicolons. Each ISIN is validated and duplicates are ignored. Import looks up matching asset metadata via yahoo finance and saves it locally for later use in the app. Updates stored data if an entered asset already exists.",
+                ),
+            );
+        });
+        ui.add_space(Self::SPACE_2);
+
+        if ui.button("Import").clicked() {
+            let isins = self
+                .transaction_asset_isins_input
+                .lines()
+                .map(ToOwned::to_owned)
+                .collect();
+            self.start_import_transaction_assets(core_lib::ImportTransactionAssetsInput { isins });
+        }
     }
 
     fn show_log_sell_transaction_page(&mut self, ui: &mut egui::Ui) {
@@ -1408,6 +1475,9 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                         Page::Transactions => self.show_transactions_page(ui),
                         Page::LogSellTransaction => self.show_log_sell_transaction_page(ui),
                         Page::TransactionAssets => self.show_transaction_assets_page(ui),
+                        Page::ImportTransactionAssets => {
+                            self.show_import_transaction_assets_page(ui)
+                        }
                     }
                 }
                 ui.add_space(Self::SPACE_3);
