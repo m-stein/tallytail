@@ -734,6 +734,7 @@ fn list_transactions_raw(
         SELECT
             dates.date,
             transaction_types.code,
+            assets.name,
             assets.isin,
             transactions.quantity,
             transactions.share_price,
@@ -753,11 +754,12 @@ fn list_transactions_raw(
             Ok(ListedTransaction {
                 date: row.get(0)?,
                 r#type: row.get(1)?,
-                isin: row.get(2)?,
-                quantity: row.get(3)?,
-                share_price: row.get(4)?,
-                order_value: row.get(5)?,
-                currency: row.get(6)?,
+                asset_name: row.get(2)?,
+                isin: row.get(3)?,
+                quantity: row.get(4)?,
+                share_price: row.get(5)?,
+                order_value: row.get(6)?,
+                currency: row.get(7)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -767,6 +769,7 @@ fn list_transactions_raw(
 struct QueriedPortfolioItem {
     id: i64,
     buy_date: String,
+    asset_name: Option<String>,
     isin: String,
     quantity: String,
     share_price: String,
@@ -784,6 +787,7 @@ fn query_portfolio_items(
             portfolio_items.id,
             portfolio_items.buy_transaction_id,
             dates.date,
+            assets.name,
             assets.isin,
             transactions.quantity,
             portfolio_items.remaining_quantity,
@@ -808,11 +812,12 @@ fn query_portfolio_items(
             Ok(QueriedPortfolioItem {
                 id: row.get(0)?,
                 buy_date: row.get(2)?,
-                isin: row.get(3)?,
-                quantity: row.get(5)?,
-                share_price: row.get(6)?,
-                order_value: row.get(7)?,
-                currency: row.get(8)?,
+                asset_name: row.get(3)?,
+                isin: row.get(4)?,
+                quantity: row.get(6)?,
+                share_price: row.get(7)?,
+                order_value: row.get(8)?,
+                currency: row.get(9)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?
@@ -851,7 +856,7 @@ fn list_portfolio_overview_items_raw(
         total_value: Decimal,
     }
 
-    let mut positions: BTreeMap<(String, String), Accumulator> = BTreeMap::new();
+    let mut positions: BTreeMap<(Option<String>, String, String), Accumulator> = BTreeMap::new();
     for item in query_portfolio_items(connection, None)? {
         let quantity = item
             .quantity
@@ -866,7 +871,7 @@ fn list_portfolio_overview_items_raw(
             .ok_or_else(|| eyre!("Portfolio item value is too large"))?;
 
         let position = positions
-            .entry((item.isin, item.currency))
+            .entry((item.asset_name, item.isin, item.currency))
             .or_insert(Accumulator {
                 quantity: Decimal::ZERO,
                 total_value: Decimal::ZERO,
@@ -883,12 +888,13 @@ fn list_portfolio_overview_items_raw(
 
     positions
         .into_iter()
-        .map(|((isin, currency), position)| {
+        .map(|((asset_name, isin, currency), position)| {
             let average_share_price = position
                 .total_value
                 .checked_div(position.quantity)
                 .ok_or_else(|| eyre!("Portfolio position quantity must be greater than 0"))?;
             Ok(PortfolioOverviewItem {
+                asset_name,
                 isin,
                 quantity: position.quantity.normalize().to_string(),
                 average_share_price: average_share_price.normalize().to_string(),

@@ -120,6 +120,7 @@ pub struct EframeApp<B: AppBackend> {
     portfolio_overview_items: Vec<PortfolioOverviewItem>,
     portfolio_isin_items: Vec<PortfolioIsinItem>,
     portfolio_isin: Option<String>,
+    portfolio_asset_name: Option<String>,
     log_sell_transaction_input: LogSellTransactionInput,
     cfg_catgs_input: ConfigureCatgoriesInput,
     request_data: RequestData,
@@ -169,6 +170,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             portfolio_overview_items: Vec::new(),
             portfolio_isin_items: Vec::new(),
             portfolio_isin: None,
+            portfolio_asset_name: None,
             log_sell_transaction_input: LogSellTransactionInput::default(),
         };
         app.start_load_png_data(Self::SQUIRREL_IMG_PATH.to_string());
@@ -356,6 +358,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
     fn init_log_sell_transaction_page(&mut self) -> eyre::Result<()> {
         self.portfolio_isin = None;
+        self.portfolio_asset_name = None;
         self.portfolio_isin_items.clear();
         self.reset_portfolio_sale_inputs();
         self.start_list_portfolio_overview_items();
@@ -754,6 +757,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             .show(ui, |ui| {
                 ui.strong("Date");
                 ui.strong("Type");
+                ui.strong("Asset");
                 ui.strong("ISIN");
                 ui.strong("Quantity");
                 ui.strong("Share Price");
@@ -764,6 +768,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 for transaction in &self.listed_transactions {
                     ui.label(&transaction.date);
                     ui.label(&transaction.r#type);
+                    ui.label(transaction.asset_name.as_deref().unwrap_or("?"));
                     ui.label(&transaction.isin);
                     ui.label(&transaction.quantity);
                     ui.label(&transaction.share_price);
@@ -839,6 +844,7 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
             {
                 if self.portfolio_isin.is_some() {
                     self.portfolio_isin = None;
+                    self.portfolio_asset_name = None;
                     self.portfolio_isin_items.clear();
                     self.reset_portfolio_sale_inputs();
                     self.start_list_portfolio_overview_items();
@@ -857,7 +863,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
 
         if let Some(isin) = self.portfolio_isin.clone() {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(&isin).heading().size(Self::H3_SIZE));
+                let title = self
+                    .portfolio_asset_name
+                    .as_deref()
+                    .map(|asset_name| format!("{asset_name} - {isin}"))
+                    .unwrap_or_else(|| isin.clone());
+                ui.label(egui::RichText::new(title).heading().size(Self::H3_SIZE));
             });
             ui.add_space(Self::SPACE_3);
 
@@ -953,11 +964,12 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
         });
         ui.add_space(Self::SPACE_3);
 
-        let mut selected_isin = None;
+        let mut selected_position: Option<(String, Option<String>)> = None;
         egui::Grid::new("portfolio_positions_grid")
             .striped(true)
             .spacing([Self::SPACE_2, Self::SPACE_2])
             .show(ui, |ui| {
+                ui.strong("Asset");
                 ui.strong("ISIN");
                 ui.strong("Quantity");
                 ui.strong("Average Share Price");
@@ -966,8 +978,16 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 ui.end_row();
 
                 for position in &self.portfolio_overview_items {
+                    if ui
+                        .link(position.asset_name.as_deref().unwrap_or(""))
+                        .clicked()
+                    {
+                        selected_position =
+                            Some((position.isin.clone(), position.asset_name.clone()));
+                    }
                     if ui.link(&position.isin).clicked() {
-                        selected_isin = Some(position.isin.clone());
+                        selected_position =
+                            Some((position.isin.clone(), position.asset_name.clone()));
                     }
                     ui.label(Self::format_decimal_for_display(&position.quantity));
                     ui.label(Self::format_decimal_for_display(
@@ -979,8 +999,9 @@ impl<BACKEND: AppBackend> EframeApp<BACKEND> {
                 }
             });
 
-        if let Some(isin) = selected_isin {
+        if let Some((isin, asset_name)) = selected_position {
             self.portfolio_isin = Some(isin.clone());
+            self.portfolio_asset_name = asset_name;
             self.portfolio_isin_items.clear();
             self.reset_portfolio_sale_inputs();
             self.log_sell_transaction_input.isin = isin.clone();

@@ -12,6 +12,7 @@ pub struct PortfolioIsinItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortfolioOverviewItem {
+    pub asset_name: Option<String>,
     pub isin: String,
     pub quantity: String,
     pub average_share_price: String,
