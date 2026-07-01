@@ -1,23 +1,29 @@
 mod error;
 
 use crate::error::WebBackEndError;
-use axum::{Json, Router, routing::post};
+use axum::{Json, Router, response::Html, routing::{get, get_service, post}};
 use core_lib::call_macro_with_request_list;
 use std::net::SocketAddr;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 
 macro_rules! implement_requests {
     ($($request:ident($($arg_ty:ty)?) -> $ret_ty:ty;)*) => {
 
-        // Add one function for creating a router that has one "POST" route for each request
         fn router() -> Router {
-            Router::new()$(.route(concat!("/", stringify!($request)), post($request)))*
+            let static_service = get_service(ServeDir::new("web_front_end/dist"))
+                .handle_error(|error: std::io::Error| async move {
+                    (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Static file error: {}", error))
+                });
+
+            Router::new()
+                .route("/", get(index))
+                .fallback_service(static_service)
+                $(.route(concat!("/", stringify!($request)), post($request)))*
         }
-        // Add an async handler for each "POST" route. Each handler calls the
-        // `infra_lib` function with the same name as the handled request
+
         $(implement_requests!(@handler $request ($($arg_ty)?) -> $ret_ty);)*
     };
-    // Handler template for requests with no argument
     (@handler $request:ident () -> $ret_ty:ty) => {
         async fn $request(
             Json(()): Json<()>,
@@ -25,7 +31,6 @@ macro_rules! implement_requests {
             Ok(Json(infra_lib::$request()?))
         }
     };
-    // Handler template for requests with one argument
     (@handler $request:ident ($arg_ty:ty) -> $ret_ty:ty) => {
         async fn $request(
             Json(args): Json<$arg_ty>,
@@ -35,12 +40,20 @@ macro_rules! implement_requests {
     };
 }
 
+async fn index() -> Html<String> {
+    Html(std::fs::read_to_string("web_front_end/dist/index.html").unwrap())
+}
+
 call_macro_with_request_list!(implement_requests);
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     let router = router().layer(CorsLayer::permissive());
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let port: u16 = std::env::var("PORT")
+        .unwrap_or_else(|_| "3000".to_string())
+        .parse()
+        .unwrap_or(3000);
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("Web back end runs on http://{addr}");
     axum::serve(listener, router).await?;
