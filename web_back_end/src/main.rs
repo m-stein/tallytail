@@ -11,15 +11,12 @@ macro_rules! implement_requests {
     ($($request:ident($($arg_ty:ty)?) -> $ret_ty:ty;)*) => {
 
         fn router() -> Router {
-            let static_service = get_service(ServeDir::new("web_front_end/dist"))
-                .handle_error(|error: std::io::Error| async move {
-                    (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Static file error: {}", error))
-                });
+            let static_service = get_service(ServeDir::new("web_front_end/dist"));
 
             Router::new()
+                $(.route(concat!("/", stringify!($request)), post($request)))*
                 .route("/", get(index))
                 .fallback_service(static_service)
-                $(.route(concat!("/", stringify!($request)), post($request)))*
         }
 
         $(implement_requests!(@handler $request ($($arg_ty)?) -> $ret_ty);)*
