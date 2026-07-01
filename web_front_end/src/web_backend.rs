@@ -31,10 +31,19 @@ macro_rules! implement_requests {
 pub struct WebBackend;
 
 impl WebBackend {
-    const SERVER_URL: &str = "http://127.0.0.1:3000";
+    const LOCAL_BACKEND_URL: &'static str = "http://127.0.0.1:3000";
 
     fn request_url(request: &str) -> String {
-        format!("{}/{}", Self::SERVER_URL, request)
+        let window = web_sys::window().expect("missing window");
+        let location = window.location();
+        let hostname = location.hostname().unwrap_or_default();
+        let port = location.port().unwrap_or_default();
+
+        if (hostname == "127.0.0.1" || hostname == "localhost") && port != "3000" {
+            format!("{}/{}", Self::LOCAL_BACKEND_URL, request)
+        } else {
+            format!("/{}", request)
+        }
     }
 
     async fn post<Args, Ret>(request: &str, args: Args) -> eyre::Result<Ret>
