@@ -12,8 +12,7 @@ use rusqlite::{params, types::FromSqlError};
 use rust_decimal::Decimal;
 use std::{
     collections::{BTreeMap, HashSet},
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
 };
 
@@ -33,6 +32,25 @@ fn assets_db_path() -> PathBuf {
 
 fn allocation_records_dir() -> PathBuf {
     data_dir_path().join("allocation_records")
+}
+
+fn ensure_data_dir() -> eyre::Result<()> {
+    fs::create_dir_all(allocation_records_dir())?;
+    Ok(())
+}
+
+fn open_transactions_connection() -> eyre::Result<rusqlite::Connection> {
+    ensure_data_dir()?;
+    let connection = rusqlite::Connection::open(transactions_db_path())?;
+    ensure_transactions_schema(&connection)?;
+    Ok(connection)
+}
+
+fn open_assets_connection() -> eyre::Result<rusqlite::Connection> {
+    ensure_data_dir()?;
+    let connection = rusqlite::Connection::open(assets_db_path())?;
+    ensure_assets_schema(&connection)?;
+    Ok(connection)
 }
 
 pub fn get_alloc_diagram_data(
@@ -90,12 +108,7 @@ pub fn add_asset(args: AddAssetArgs) -> eyre::Result<()> {
 
 pub fn log_buy_transaction(input: LogBuyTransactionInput) -> eyre::Result<()> {
     let transaction = validate_log_buy_transaction_input(input)?;
-    let db_path = transactions_db_path();
-    if let Some(parent) = db_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let mut connection = rusqlite::Connection::open(db_path)?;
-    ensure_transactions_schema(&connection)?;
+    let mut connection = open_transactions_connection()?;
     let tx = connection.transaction()?;
     let quantity = transaction.quantity.to_string();
     let transaction_id = insert_transaction(&tx, transaction)?;
@@ -114,12 +127,7 @@ pub fn log_buy_transaction(input: LogBuyTransactionInput) -> eyre::Result<()> {
 
 pub fn log_sell_transaction(input: LogSellTransactionInput) -> eyre::Result<()> {
     let sell_transaction = validate_log_sell_transaction_input(input)?;
-    let db_path = transactions_db_path();
-    if let Some(parent) = db_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let mut connection = rusqlite::Connection::open(db_path)?;
-    ensure_transactions_schema(&connection)?;
+    let mut connection = open_transactions_connection()?;
     let tx = connection.transaction()?;
 
     let asset_id = get_or_create_id(&tx, "assets", "isin", &sell_transaction.transaction.isin)?;
@@ -190,24 +198,14 @@ pub fn log_sell_transaction(input: LogSellTransactionInput) -> eyre::Result<()> 
 }
 
 pub fn list_transactions() -> eyre::Result<Vec<ListedTransaction>> {
-    let db_path = transactions_db_path();
-    if let Some(parent) = db_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let connection = rusqlite::Connection::open(db_path)?;
-    ensure_transactions_schema(&connection)?;
+    let connection = open_transactions_connection()?;
     list_transactions_raw(&connection)
 }
 
 pub fn import_transaction_assets(
     input: ImportTransactionAssetsInput,
 ) -> eyre::Result<Vec<TransactionAsset>> {
-    let db_path = transactions_db_path();
-    if let Some(parent) = db_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let mut connection = rusqlite::Connection::open(db_path)?;
-    ensure_transactions_schema(&connection)?;
+    let mut connection = open_transactions_connection()?;
 
     let tx = connection.transaction()?;
     for raw_isin in parse_transaction_asset_isins(input.isins)? {
@@ -216,39 +214,23 @@ pub fn import_transaction_assets(
     }
     tx.commit()?;
 
-    let connection = rusqlite::Connection::open(transactions_db_path())?;
-    ensure_transactions_schema(&connection)?;
+    let connection = open_transactions_connection()?;
     list_transaction_assets_raw(&connection)
 }
 
 pub fn list_transaction_assets() -> eyre::Result<Vec<TransactionAsset>> {
-    let db_path = transactions_db_path();
-    if let Some(parent) = db_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let connection = rusqlite::Connection::open(db_path)?;
-    ensure_transactions_schema(&connection)?;
+    let connection = open_transactions_connection()?;
     list_transaction_assets_raw(&connection)
 }
 
 pub fn list_portfolio_overview_items() -> eyre::Result<Vec<PortfolioOverviewItem>> {
-    let db_path = transactions_db_path();
-    if let Some(parent) = db_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let connection = rusqlite::Connection::open(db_path)?;
-    ensure_transactions_schema(&connection)?;
+    let connection = open_transactions_connection()?;
     list_portfolio_overview_items_raw(&connection)
 }
 
 pub fn list_portfolio_isin_items(isin: String) -> eyre::Result<Vec<PortfolioIsinItem>> {
     let isin = normalize_isin(&isin)?;
-    let db_path = transactions_db_path();
-    if let Some(parent) = db_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let connection = rusqlite::Connection::open(db_path)?;
-    ensure_transactions_schema(&connection)?;
+    let connection = open_transactions_connection()?;
     list_portfolio_isin_items_raw(&connection, &isin)
 }
 
@@ -557,6 +539,44 @@ fn ensure_transactions_schema(connection: &rusqlite::Connection) -> eyre::Result
             PRIMARY KEY (portfolio_item_id, sell_transaction_id),
             FOREIGN KEY (portfolio_item_id) REFERENCES portfolio_items(id),
             FOREIGN KEY (sell_transaction_id) REFERENCES transactions(id)
+        );
+        ",
+    )?;
+    Ok(())
+}
+
+fn ensure_assets_schema(connection: &rusqlite::Connection) -> eyre::Result<()> {
+    connection.execute_batch(
+        "
+        PRAGMA foreign_keys = ON;
+
+        CREATE TABLE IF NOT EXISTS assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            reference_type TEXT NOT NULL,
+            reference_value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS asset_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE
+        );
+
+        CREATE TABLE IF NOT EXISTS asset_category_values (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asset_category_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            UNIQUE(asset_category_id, name),
+            FOREIGN KEY (asset_category_id) REFERENCES asset_categories(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS asset_category_value_assignments (
+            asset_id INTEGER NOT NULL,
+            asset_category_value_id INTEGER NOT NULL,
+            ratio REAL NOT NULL,
+            PRIMARY KEY (asset_id, asset_category_value_id),
+            FOREIGN KEY (asset_id) REFERENCES assets(id),
+            FOREIGN KEY (asset_category_value_id) REFERENCES asset_category_values(id)
         );
         ",
     )?;
@@ -921,7 +941,7 @@ fn list_portfolio_overview_items_raw(
 }
 
 fn add_asset_raw(asset: &Asset, catgy_assignms: &[CategoryAssignment]) -> eyre::Result<()> {
-    let mut connection = rusqlite::Connection::open(assets_db_path())?;
+    let mut connection = open_assets_connection()?;
     let tx = connection.transaction()?;
     tx.execute(
         "INSERT INTO assets (name, reference_type, reference_value) VALUES (?1, ?2, ?3)",
@@ -946,7 +966,7 @@ fn add_asset_raw(asset: &Asset, catgy_assignms: &[CategoryAssignment]) -> eyre::
 }
 
 pub fn get_assets() -> eyre::Result<Vec<Asset>> {
-    let connection = rusqlite::Connection::open(assets_db_path())?;
+    let connection = open_assets_connection()?;
     let mut stmt = connection.prepare(
         "SELECT id, name, reference_type, reference_value
                 FROM assets
@@ -976,7 +996,7 @@ pub fn get_assets() -> eyre::Result<Vec<Asset>> {
 }
 
 pub fn get_categories() -> eyre::Result<Vec<Category>> {
-    let connection = rusqlite::Connection::open(assets_db_path())?;
+    let connection = open_assets_connection()?;
 
     let mut stmt = connection.prepare(
         "
@@ -1028,9 +1048,7 @@ pub fn get_latest_record() -> eyre::Result<Option<AllocationRecord>> {
 }
 
 fn get_latest_record_paths(dir: &Path, limit: usize) -> eyre::Result<Vec<PathBuf>> {
-    if !dir.exists() {
-        return Err(eyre!(format!("Directory does not exist: {:?}", dir)));
-    }
+    fs::create_dir_all(dir)?;
     let mut paths: Vec<PathBuf> = fs::read_dir(dir)?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
@@ -1055,6 +1073,7 @@ fn get_latest_record_paths(dir: &Path, limit: usize) -> eyre::Result<Vec<PathBuf
 }
 
 fn get_latest_records(limit: usize) -> eyre::Result<Vec<AllocationRecord>> {
+    ensure_data_dir()?;
     get_latest_record_paths(&allocation_records_dir(), limit)?
         .into_iter()
         .map(|path| Ok(ron::from_str(&fs::read_to_string(path)?)?))
@@ -1062,7 +1081,7 @@ fn get_latest_records(limit: usize) -> eyre::Result<Vec<AllocationRecord>> {
 }
 
 fn get_category_name_by_id(category_id: i64) -> eyre::Result<String> {
-    let connection = rusqlite::Connection::open(assets_db_path())?;
+    let connection = open_assets_connection()?;
     Ok(connection.query_row(
         "SELECT name FROM asset_categories WHERE id = ?1",
         rusqlite::params![category_id],
@@ -1071,7 +1090,7 @@ fn get_category_name_by_id(category_id: i64) -> eyre::Result<String> {
 }
 
 fn add_category_value(category_id: i64, value_name: &str) -> eyre::Result<()> {
-    let connection = rusqlite::Connection::open(assets_db_path())?;
+    let connection = open_assets_connection()?;
     connection.execute(
         "INSERT INTO asset_category_values (asset_category_id, name)
         VALUES (?1, ?2)",
@@ -1081,7 +1100,7 @@ fn add_category_value(category_id: i64, value_name: &str) -> eyre::Result<()> {
 }
 
 fn add_category(name: &str) -> eyre::Result<i64> {
-    let connection = rusqlite::Connection::open(assets_db_path())?;
+    let connection = open_assets_connection()?;
     connection.execute(
         "INSERT INTO asset_categories (name) VALUES (?1)",
         params![name],
@@ -1178,7 +1197,10 @@ pub fn configure_categories(
 mod tests {
     use super::*;
     use jiff::Zoned;
-    use std::collections::HashMap;
+    use std::{
+        collections::HashMap,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     fn valid_log_buy_transaction_input() -> LogBuyTransactionInput {
         LogBuyTransactionInput {
@@ -1200,6 +1222,64 @@ mod tests {
             share_price: "100.00".to_string(),
             order_value: "149.99".to_string(),
         }
+    }
+
+    fn unique_test_path(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        env::temp_dir().join(format!("tallytail_{name}_{unique}"))
+    }
+
+    #[test]
+    fn creates_assets_schema_for_empty_database() {
+        let connection = rusqlite::Connection::open_in_memory().unwrap();
+
+        ensure_assets_schema(&connection).unwrap();
+
+        connection
+            .execute(
+                "INSERT INTO asset_categories (name) VALUES (?1)",
+                ["Sector"],
+            )
+            .unwrap();
+        let category_id = connection.last_insert_rowid();
+        connection
+            .execute(
+                "INSERT INTO asset_category_values (asset_category_id, name) VALUES (?1, ?2)",
+                rusqlite::params![category_id, "Technology"],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO assets (name, reference_type, reference_value) VALUES (?1, ?2, ?3)",
+                ["Apple", "Isin", "US0378331005"],
+            )
+            .unwrap();
+
+        let asset_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM assets", [], |row| row.get(0))
+            .unwrap();
+        let category_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM asset_categories", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+
+        assert_eq!(asset_count, 1);
+        assert_eq!(category_count, 1);
+    }
+
+    #[test]
+    fn latest_record_paths_creates_missing_directory() {
+        let dir = unique_test_path("allocation_records");
+
+        let paths = get_latest_record_paths(&dir, 1).unwrap();
+
+        assert!(paths.is_empty());
+        assert!(dir.is_dir());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

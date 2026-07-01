@@ -1,7 +1,11 @@
 mod error;
 
 use crate::error::WebBackEndError;
-use axum::{Json, Router, response::Html, routing::{get, get_service, post}};
+use axum::{
+    Json, Router,
+    response::Html,
+    routing::{get, get_service, post},
+};
 use core_lib::call_macro_with_request_list;
 use std::net::SocketAddr;
 use tower_http::cors::CorsLayer;
