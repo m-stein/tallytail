@@ -1,0 +1,44 @@
+ARG RUST_VERSION=1.94.1
+
+FROM rust:${RUST_VERSION}-bookworm AS builder
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends clang libssl-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rustup target add wasm32-unknown-unknown
+RUN cargo install trunk --version 0.21.14 --locked
+
+COPY Cargo.toml Cargo.lock ./
+COPY core_lib ./core_lib
+COPY ui_lib ./ui_lib
+COPY infra_lib ./infra_lib
+COPY desktop_app ./desktop_app
+COPY web_back_end ./web_back_end
+COPY web_front_end ./web_front_end
+COPY img ./img
+
+RUN cd web_front_end && trunk build --release
+RUN cargo build --release -p web_back_end
+
+FROM debian:bookworm-slim AS runtime
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libssl3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /app/data
+
+ENV PORT=8080
+ENV TALLYTAIL_DATA_DIR=/app/data
+
+COPY --from=builder /app/target/release/web_back_end /usr/local/bin/tallytail-web
+COPY --from=builder /app/web_front_end/dist /app/web_front_end/dist
+COPY --from=builder /app/img /img
+
+EXPOSE 8080
+
+CMD ["tallytail-web"]
