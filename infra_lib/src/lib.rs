@@ -12,9 +12,28 @@ use rusqlite::{params, types::FromSqlError};
 use rust_decimal::Decimal;
 use std::{
     collections::{BTreeMap, HashSet},
+    env,
     fs,
     path::{Path, PathBuf},
 };
+
+fn data_dir_path() -> PathBuf {
+    env::var("TALLYTAIL_DATA_DIR")
+        .map(PathBuf::from)
+        .expect("TALLYTAIL_DATA_DIR must be set")
+}
+
+fn transactions_db_path() -> PathBuf {
+    data_dir_path().join("transactions.sdb")
+}
+
+fn assets_db_path() -> PathBuf {
+    data_dir_path().join("assets.sdb")
+}
+
+fn allocation_records_dir() -> PathBuf {
+    data_dir_path().join("allocation_records")
+}
 
 pub fn get_alloc_diagram_data(
     args: GetAllocDiagramDataArgs,
@@ -71,7 +90,7 @@ pub fn add_asset(args: AddAssetArgs) -> eyre::Result<()> {
 
 pub fn log_buy_transaction(input: LogBuyTransactionInput) -> eyre::Result<()> {
     let transaction = validate_log_buy_transaction_input(input)?;
-    let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
+    let db_path = transactions_db_path();
     if let Some(parent) = db_path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -95,7 +114,7 @@ pub fn log_buy_transaction(input: LogBuyTransactionInput) -> eyre::Result<()> {
 
 pub fn log_sell_transaction(input: LogSellTransactionInput) -> eyre::Result<()> {
     let sell_transaction = validate_log_sell_transaction_input(input)?;
-    let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
+    let db_path = transactions_db_path();
     if let Some(parent) = db_path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -171,7 +190,7 @@ pub fn log_sell_transaction(input: LogSellTransactionInput) -> eyre::Result<()> 
 }
 
 pub fn list_transactions() -> eyre::Result<Vec<ListedTransaction>> {
-    let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
+    let db_path = transactions_db_path();
     if let Some(parent) = db_path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -213,7 +232,7 @@ pub fn list_transaction_assets() -> eyre::Result<Vec<TransactionAsset>> {
 }
 
 pub fn list_portfolio_overview_items() -> eyre::Result<Vec<PortfolioOverviewItem>> {
-    let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
+    let db_path = transactions_db_path();
     if let Some(parent) = db_path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -224,17 +243,13 @@ pub fn list_portfolio_overview_items() -> eyre::Result<Vec<PortfolioOverviewItem
 
 pub fn list_portfolio_isin_items(isin: String) -> eyre::Result<Vec<PortfolioIsinItem>> {
     let isin = normalize_isin(&isin)?;
-    let db_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb");
+    let db_path = transactions_db_path();
     if let Some(parent) = db_path.parent() {
         fs::create_dir_all(parent)?;
     }
     let connection = rusqlite::Connection::open(db_path)?;
     ensure_transactions_schema(&connection)?;
     list_portfolio_isin_items_raw(&connection, &isin)
-}
-
-fn transactions_db_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/transactions.sdb")
 }
 
 #[derive(Debug)]
@@ -906,7 +921,7 @@ fn list_portfolio_overview_items_raw(
 }
 
 fn add_asset_raw(asset: &Asset, catgy_assignms: &[CategoryAssignment]) -> eyre::Result<()> {
-    let mut connection = rusqlite::Connection::open("../data/assets.sdb")?;
+    let mut connection = rusqlite::Connection::open(assets_db_path())?;
     let tx = connection.transaction()?;
     tx.execute(
         "INSERT INTO assets (name, reference_type, reference_value) VALUES (?1, ?2, ?3)",
@@ -931,7 +946,7 @@ fn add_asset_raw(asset: &Asset, catgy_assignms: &[CategoryAssignment]) -> eyre::
 }
 
 pub fn get_assets() -> eyre::Result<Vec<Asset>> {
-    let connection = rusqlite::Connection::open("../data/assets.sdb")?;
+    let connection = rusqlite::Connection::open(assets_db_path())?;
     let mut stmt = connection.prepare(
         "SELECT id, name, reference_type, reference_value
                 FROM assets
@@ -961,7 +976,7 @@ pub fn get_assets() -> eyre::Result<Vec<Asset>> {
 }
 
 pub fn get_categories() -> eyre::Result<Vec<Category>> {
-    let connection = rusqlite::Connection::open("../data/assets.sdb")?;
+    let connection = rusqlite::Connection::open(assets_db_path())?;
 
     let mut stmt = connection.prepare(
         "
@@ -1040,14 +1055,14 @@ fn get_latest_record_paths(dir: &Path, limit: usize) -> eyre::Result<Vec<PathBuf
 }
 
 fn get_latest_records(limit: usize) -> eyre::Result<Vec<AllocationRecord>> {
-    get_latest_record_paths(Path::new("../data/allocation_records"), limit)?
+    get_latest_record_paths(&allocation_records_dir(), limit)?
         .into_iter()
         .map(|path| Ok(ron::from_str(&fs::read_to_string(path)?)?))
         .collect()
 }
 
 fn get_category_name_by_id(category_id: i64) -> eyre::Result<String> {
-    let connection = rusqlite::Connection::open("../data/assets.sdb")?;
+    let connection = rusqlite::Connection::open(assets_db_path())?;
     Ok(connection.query_row(
         "SELECT name FROM asset_categories WHERE id = ?1",
         rusqlite::params![category_id],
@@ -1056,7 +1071,7 @@ fn get_category_name_by_id(category_id: i64) -> eyre::Result<String> {
 }
 
 fn add_category_value(category_id: i64, value_name: &str) -> eyre::Result<()> {
-    let connection = rusqlite::Connection::open("../data/assets.sdb")?;
+    let connection = rusqlite::Connection::open(assets_db_path())?;
     connection.execute(
         "INSERT INTO asset_category_values (asset_category_id, name)
         VALUES (?1, ?2)",
@@ -1066,7 +1081,7 @@ fn add_category_value(category_id: i64, value_name: &str) -> eyre::Result<()> {
 }
 
 fn add_category(name: &str) -> eyre::Result<i64> {
-    let connection = rusqlite::Connection::open("../data/assets.sdb")?;
+    let connection = rusqlite::Connection::open(assets_db_path())?;
     connection.execute(
         "INSERT INTO asset_categories (name) VALUES (?1)",
         params![name],
